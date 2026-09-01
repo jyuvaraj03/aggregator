@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 
 from bs4 import BeautifulSoup
-from peewee import CharField, DateTimeField, Model, TextField
+from peewee import CharField, DateTimeField, ForeignKeyField, Model, TextField
 
 from .database import database
 
@@ -26,6 +26,16 @@ class JSONTextField(TextField):
         return {}
 
 
+class Template(Model):
+    """A Drain3 pattern extracted from one or more email bodies."""
+
+    text = TextField()
+
+    class Meta:
+        database = database
+        table_name = "templates"
+
+
 class Email(Model):
     """An immutable snapshot of a Gmail message imported by the synchronizer."""
 
@@ -38,6 +48,7 @@ class Email(Model):
     body_html = TextField(null=True)
     headers = JSONTextField()
     authentication_status = TextField(null=True)
+    template = ForeignKeyField(Template, null=True, backref="emails", on_delete="SET NULL")
 
     def readable_body(self) -> str:
         soup = BeautifulSoup(self.body_html or "", "html.parser")

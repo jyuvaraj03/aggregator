@@ -4,10 +4,11 @@
 from datetime import date, timedelta
 
 from aggregator.email_sync import sync_messages
+from aggregator.template_mining import mine_templates
 
 from .database import database_connection
 from .email_pull import pull_messages
-from .models import Email
+from .models import Email, Template
 
 
 def pull_test(label: str | None = None, from_date: date | None = None):
@@ -24,6 +25,20 @@ def get_last_email() -> Email | None:
     """Return the most recently received email stored in the database."""
     with database_connection():
         return Email.select().order_by(Email.received_at.desc()).first()
+
+def mine_test():
+    with database_connection():
+        # print(sync_test("Transactions", date.today() - timedelta(days=20)))
+        all_emails = Email.select().order_by(Email.received_at.desc())
+        # Reset all templates
+        Template.delete().where(True).execute()
+        mining_result = mine_templates(all_emails)
+        print(mining_result)
+        templates = Template.select()
+        for template in templates:
+            print(template.text)
+            print(f"Count: {len(template.emails)}")  # pyright: ignore[reportUnknownArgumentType, reportAttributeAccessIssue]
+            print("\n----\n")
 
 def main() -> int:
     return 0
