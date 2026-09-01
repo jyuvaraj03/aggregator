@@ -1,0 +1,41 @@
+[project]
+name = "aggregator"
+version = "0.1.0"
+description = "Composable pipelines for aggregating and transforming records."
+readme = "README.md"
+authors = [
+    { name = "Yuvaraj J", email = "jyuvaraj03@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+aggregator = "aggregator.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
