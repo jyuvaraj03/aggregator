@@ -55,7 +55,7 @@ def test_mine_templates_persists_final_pattern_and_tags_matching_emails() -> Non
     third = Email.get_by_id(third.id)
     template = Template.get()
     assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
-    assert template.text == "Order <*> confirmed for <*>"
+    assert template.text == "Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
     assert first.template_id == template.id
     assert second.template_id == template.id
     assert third.template_id == template.id
@@ -71,6 +71,34 @@ def test_mine_templates_uses_readable_html_and_skips_empty_bodies() -> None:
     assert Template.select().count() == 0
     assert Email.get_by_id(receipt.id).template_id is None
     assert Email.get_by_id(empty.id).template_id is None
+
+
+def test_mine_templates_masks_dates_currency_and_numbers() -> None:
+    emails = [
+        _email("one", "<p>Invoice 100 issued on 2026-09-01: total Rs. 7.20</p>"),
+        _email("two", "<p>Invoice 101 issued on 09/02/2026: total Rs 18.00</p>"),
+        _email("three", "<p>Invoice 102 issued on 2026.09.03: total Rs1,250.50</p>"),
+    ]
+
+    result = mine_templates(emails)
+
+    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
+    assert (
+        Template.get().text
+        == "Invoice <NUMBER> issued on <DATE>: total <CURRENCY_CODE><NUMBER>"
+    )
+
+
+def test_mine_templates_does_not_mask_words_containing_currency_code_letters() -> None:
+    emails = [
+        _email(f"plumber-{index}", "<p>Our plumbers. are ready</p>")
+        for index in range(3)
+    ]
+
+    result = mine_templates(emails)
+
+    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
+    assert Template.get().text == "Our plumbers. are ready"
 
 
 def test_mine_templates_leaves_clusters_smaller_than_three_untagged() -> None:

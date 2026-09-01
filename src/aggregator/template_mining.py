@@ -8,12 +8,27 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from drain3 import TemplateMiner
+from drain3.masking import MaskingInstruction
 from drain3.template_miner_config import TemplateMinerConfig
 
 from .database import database, database_connection
 from .models import Email, Template
 
 MINIMUM_CLUSTER_SIZE = 3
+
+# Keep dates before generic numbers so their components remain intact. Currency
+# codes are masked separately, leaving their amounts as number masks.
+MASKING_INSTRUCTIONS = (
+    MaskingInstruction(
+        r"(?<!\d)(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})(?!\d)",
+        "DATE",
+    ),
+    MaskingInstruction(
+        r"(?:[$€£¥₹]|(?<!\w)(?:(?i:USD|EUR|GBP|INR|JPY|CAD|AUD)(?!\w)|(?i:RS\.?)(?![A-Za-z_])))\s*",
+        "CURRENCY_CODE",
+    ),
+    MaskingInstruction(r"(?<![\w.])[+-]?\d+(?:,\d{3})*(?:\.\d+)?(?![\w.])", "NUMBER"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +61,9 @@ def mine_templates(emails: Iterable[Email]) -> TemplateMiningResult:
 
 
 def _mine_emails(emails: Iterable[Email]) -> tuple[TemplateMiner, dict[int, int], list[int]]:
-    miner = TemplateMiner(config=TemplateMinerConfig())
+    config = TemplateMinerConfig()
+    config.masking_instructions = list(MASKING_INSTRUCTIONS)
+    miner = TemplateMiner(config=config)
     cluster_ids_by_email_id: dict[int, int] = {}
     empty_email_ids: list[int] = []
 
