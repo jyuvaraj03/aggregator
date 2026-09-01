@@ -11,6 +11,12 @@ and install all locked dependencies with:
 uv sync
 ```
 
+Apply the database schema migrations before running a sync:
+
+```bash
+uv run pwmigrate up
+```
+
 ## Run the example
 
 ```bash

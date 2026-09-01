@@ -1,14 +1,21 @@
 # Peewee's model query methods are intentionally dynamically typed.
-# pyright: reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+# pyright: reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from __future__ import annotations
 
 from collections.abc import Generator
 from datetime import UTC, date, datetime
 
 import pytest
+from playhouse.migrations import Runner
 
 from aggregator import email_sync
-from aggregator.database import DATABASE_PATH, close_database, connect_database, database
+from aggregator.database import (
+    DATABASE_PATH,
+    PROJECT_ROOT,
+    close_database,
+    connect_database,
+    database,
+)
 from aggregator.email_pull import EmailMessage
 
 
@@ -18,6 +25,7 @@ def in_memory_database() -> Generator[None]:
     database.init(":memory:")  # pyright: ignore[reportUnknownMemberType]
     connect_database()
     try:
+        Runner(database, directory=str(PROJECT_ROOT / "migrations")).up()
         yield
     finally:
         close_database()

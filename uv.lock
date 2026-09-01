@@ -21,7 +21,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "google-auth", extras = ["requests"], specifier = ">=2.0" },
-    { name = "peewee", specifier = ">=3.18.3" },
+    { name = "peewee", specifier = ">=4.4.0" },
 ]
 
 [package.metadata.requires-dev]

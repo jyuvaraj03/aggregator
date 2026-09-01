@@ -1,49 +1,15 @@
 """Persist normalized Gmail messages in the shared SQLite database."""
 
 # Peewee's model query methods are intentionally dynamically typed.
-# pyright: reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+# pyright: reportUnknownMemberType=false
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from peewee import CharField, DateTimeField, Model, TextField
-
 from .database import database, database_connection
 from .email_pull import EmailMessage, pull_messages
-
-
-class JSONTextField(TextField):
-    """Store JSON in SQLite while exposing it as a dictionary in Python."""
-
-    def db_value(self, value: object) -> str:
-        return json.dumps(value)
-
-    def python_value(self, value: object) -> dict[str, str]:
-        if isinstance(value, str):
-            decoded = json.loads(value)
-            if isinstance(decoded, dict):
-                return {str(key): str(item) for key, item in decoded.items()}
-        return {}
-
-
-class Email(Model):
-    """An immutable snapshot of a Gmail message imported by the synchronizer."""
-
-    message_id = CharField(unique=True)
-    history_id = CharField(null=True)
-    received_at = DateTimeField()
-    sender = TextField()
-    subject = TextField(null=True)
-    body_text = TextField(null=True)
-    body_html = TextField(null=True)
-    headers = JSONTextField()
-    authentication_status = TextField(null=True)
-
-    class Meta:
-        database = database
-        table_name = "emails"
+from .models import Email
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +30,6 @@ def sync_messages(label: str, from_date: date | datetime) -> SyncResult:
     messages = pull_messages(label, from_date)
 
     with database_connection():
-        database.create_tables([Email], safe=True)
         with database.atomic():
             stored_ids = _existing_message_ids(messages)
             inserted = 0

@@ -1,0 +1,3 @@
+database = aggregator.database.database
+models = aggregator.models
+directory = migrations
