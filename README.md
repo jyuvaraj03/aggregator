@@ -18,6 +18,30 @@ uv run aggregator cli
 # or
 uv run python -m aggregator cli
 ```
+
+## Gmail credentials
+
+`aggregator.email_pull.pull_messages()` reads the authenticated user's mailbox
+using Google Application Default Credentials (ADC). In a Google Cloud project,
+enable the Gmail API, configure the OAuth consent screen, add your Gmail address
+as a test user when applicable, and create an OAuth **Desktop app** client.
+
+Authenticate the local user once, using the downloaded client JSON file:
+
+```bash
+gcloud auth application-default login \
+  --client-id-file=/absolute/path/to/client_secret.json \
+  --scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/gmail.readonly
+```
+
+Google stores the resulting ADC at
+`~/.config/gcloud/application_default_credentials.json`; `google-auth` discovers
+it and refreshes access tokens automatically. To use another credential file,
+set `GOOGLE_APPLICATION_CREDENTIALS` to its path. Do not commit OAuth client or
+credential files.
+
+This configuration is intended for a local personal Gmail account.
+
 ## Development
 
 ```bash

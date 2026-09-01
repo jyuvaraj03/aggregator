@@ -7,7 +7,9 @@ authors = [
     { name = "Yuvaraj J", email = "jyuvaraj03@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "google-auth[requests]>=2.0",
+]
 
 [project.scripts]
 aggregator = "aggregator.cli:main"
