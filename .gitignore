@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local SQLite database state
+aggregator.sqlite3
+aggregator.sqlite3-journal
+aggregator.sqlite3-shm
+aggregator.sqlite3-wal
