@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 
+from bs4 import BeautifulSoup
 from peewee import CharField, DateTimeField, Model, TextField
 
 from .database import database
@@ -37,6 +38,10 @@ class Email(Model):
     body_html = TextField(null=True)
     headers = JSONTextField()
     authentication_status = TextField(null=True)
+
+    def readable_body(self) -> str:
+        soup = BeautifulSoup(self.body_html or "", "html.parser")
+        return soup.get_text("\n", strip=True)
 
     class Meta:
         database = database
