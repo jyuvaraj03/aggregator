@@ -46,16 +46,19 @@ def _email(message_id: str, body_html: str) -> Email:
 def test_mine_templates_persists_final_pattern_and_tags_matching_emails() -> None:
     first = _email("one", "<p>Order #100 confirmed for $7.20</p>")
     second = _email("two", "<p>Order #101 confirmed for $8.10</p>")
+    third = _email("three", "<p>Order #102 confirmed for $9.00</p>")
 
-    result = mine_templates([first, second])
+    result = mine_templates([first, second, third])
 
     first = Email.get_by_id(first.id)
     second = Email.get_by_id(second.id)
+    third = Email.get_by_id(third.id)
     template = Template.get()
-    assert result == TemplateMiningResult(processed=2, skipped=0, templates_created=1)
+    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
     assert template.text == "Order <*> confirmed for <*>"
     assert first.template_id == template.id
     assert second.template_id == template.id
+    assert third.template_id == template.id
 
 
 def test_mine_templates_uses_readable_html_and_skips_empty_bodies() -> None:
@@ -64,28 +67,56 @@ def test_mine_templates_uses_readable_html_and_skips_empty_bodies() -> None:
 
     result = mine_templates([receipt, empty])
 
-    template = Template.get()
-    assert result == TemplateMiningResult(processed=1, skipped=1, templates_created=1)
-    assert template.text == "Receipt Total 5"
-    assert Email.get_by_id(receipt.id).template_id == template.id
+    assert result == TemplateMiningResult(processed=1, skipped=1, templates_created=0)
+    assert Template.select().count() == 0
+    assert Email.get_by_id(receipt.id).template_id is None
     assert Email.get_by_id(empty.id).template_id is None
 
 
-def test_mine_templates_creates_separate_templates_for_distinct_bodies() -> None:
-    first = _email("one", "<p>Payment received</p>")
-    second = _email("two", "<p>Password reset requested</p>")
+def test_mine_templates_leaves_clusters_smaller_than_three_untagged() -> None:
+    first = _email("one", "<p>Payment #100 received</p>")
+    second = _email("two", "<p>Payment #101 received</p>")
+    third = _email("three", "<p>Password reset requested</p>")
 
-    mine_templates([first, second])
+    result = mine_templates([first, second, third])
 
-    assert Template.select().count() == 2
-    assert Email.get_by_id(first.id).template_id != Email.get_by_id(second.id).template_id
+    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=0)
+    assert Template.select().count() == 0
+    assert Email.get_by_id(first.id).template_id is None
+    assert Email.get_by_id(second.id).template_id is None
+    assert Email.get_by_id(third.id).template_id is None
+
+
+def test_mine_templates_tags_only_eligible_clusters() -> None:
+    eligible = [
+        _email("order-one", "<p>Order #100 confirmed</p>"),
+        _email("order-two", "<p>Order #101 confirmed</p>"),
+        _email("order-three", "<p>Order #102 confirmed</p>"),
+    ]
+    ineligible = [
+        _email("reset-one", "<p>Password reset for A</p>"),
+        _email("reset-two", "<p>Password reset for B</p>"),
+    ]
+
+    result = mine_templates([*eligible, *ineligible])
+
+    assert result == TemplateMiningResult(processed=5, skipped=0, templates_created=1)
+    template = Template.get()
+    assert [Email.get_by_id(email.id).template_id for email in eligible] == [template.id] * 3
+    assert [Email.get_by_id(email.id).template_id for email in ineligible] == [None] * 2
 
 
 def test_mine_templates_rolls_back_template_writes_when_persistence_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first = _email("one", "<p>Payment received</p>")
-    second = _email("two", "<p>Password reset requested</p>")
+    emails = [
+        _email("payment-one", "<p>Payment #100 received</p>"),
+        _email("payment-two", "<p>Payment #101 received</p>"),
+        _email("payment-three", "<p>Payment #102 received</p>"),
+        _email("reset-one", "<p>Password reset for A</p>"),
+        _email("reset-two", "<p>Password reset for B</p>"),
+        _email("reset-three", "<p>Password reset for C</p>"),
+    ]
     original_create = Template.create
     calls = 0
 
@@ -99,8 +130,7 @@ def test_mine_templates_rolls_back_template_writes_when_persistence_fails(
     monkeypatch.setattr(Template, "create", fail_second_create)
 
     with pytest.raises(RuntimeError, match="template write failed"):
-        mine_templates([first, second])
+        mine_templates(emails)
 
     assert Template.select().count() == 0
-    assert Email.get_by_id(first.id).template_id is None
-    assert Email.get_by_id(second.id).template_id is None
+    assert [Email.get_by_id(email.id).template_id for email in emails] == [None] * len(emails)

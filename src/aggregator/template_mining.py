@@ -13,6 +13,8 @@ from drain3.template_miner_config import TemplateMinerConfig
 from .database import database, database_connection
 from .models import Email, Template
 
+MINIMUM_CLUSTER_SIZE = 3
+
 
 @dataclass(frozen=True, slots=True)
 class TemplateMiningResult:
@@ -39,7 +41,7 @@ def mine_templates(emails: Iterable[Email]) -> TemplateMiningResult:
     return TemplateMiningResult(
         processed=len(cluster_ids_by_email_id),
         skipped=len(empty_email_ids),
-        templates_created=len(miner.drain.clusters),
+        templates_created=len(templates_by_cluster_id),
     )
 
 
@@ -63,6 +65,7 @@ def _store_templates(miner: TemplateMiner) -> dict[int, Template]:
     return {
         cluster.cluster_id: Template.get_or_create(text=cluster.get_template())[0]
         for cluster in miner.drain.clusters
+        if cluster.size >= MINIMUM_CLUSTER_SIZE
     }
 
 
@@ -72,6 +75,8 @@ def _tag_emails(
     templates_by_cluster_id: Mapping[int, Template],
 ) -> None:
     for email_id, cluster_id in cluster_ids_by_email_id.items():
+        if cluster_id not in templates_by_cluster_id:
+            continue
         query = Email.update(template=templates_by_cluster_id[cluster_id]).where(
             Email.id == email_id
         )

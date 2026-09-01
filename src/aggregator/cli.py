@@ -29,9 +29,11 @@ def get_last_email() -> Email | None:
 def mine_test():
     with database_connection():
         # print(sync_test("Transactions", date.today() - timedelta(days=20)))
-        all_emails = Email.select().order_by(Email.received_at.desc())
-        # Reset all templates
-        Template.delete().where(True).execute()
+        all_emails = (
+            Email.select()
+            .where(Email.template.is_null())
+            .order_by(Email.received_at.desc())
+        )
         mining_result = mine_templates(all_emails)
         print(mining_result)
         templates = Template.select()
