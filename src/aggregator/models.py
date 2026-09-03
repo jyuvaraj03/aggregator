@@ -1,7 +1,7 @@
 """Peewee models for persisted aggregator records."""
 
 # Peewee's model query methods are intentionally dynamically typed.
-# pyright: reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+# pyright: reportAttributeAccessIssue=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from __future__ import annotations
 
 import json
@@ -30,6 +30,10 @@ class Template(Model):
     """A Drain3 pattern extracted from one or more email bodies."""
 
     text = TextField()
+
+    def example_email(self) -> Email | None:
+        """Return the earliest email assigned to this template, if any."""
+        return self.emails.order_by(Email.received_at.asc(), Email.id.asc()).first()
 
     class Meta:
         database = database

@@ -153,6 +153,32 @@ def test_template_counts_and_missing_resource(client: TestClient) -> None:
     assert client.get("/templates/999").status_code == 404
 
 
+def test_template_detail_includes_earliest_email_as_example(client: TestClient) -> None:
+    template = Template.create(text="receipt")
+    _email(2, template=template)
+    _email(1, template=template)
+    empty_template = Template.create(text="empty")
+
+    response = client.get(f"/templates/{template.id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": template.id,
+        "text": "receipt",
+        "email_count": 2,
+        "example": {
+            "id": 2,
+            "message_id": "message-1",
+            "received_at": "2026-09-01T00:01:00Z",
+            "sender": "sender@example.com",
+            "subject": "Subject 1",
+            "template_id": template.id,
+            "body": "Hello World",
+        },
+    }
+    assert client.get(f"/templates/{empty_template.id}").json()["example"] is None
+
+
 def test_actions_validate_delegate_and_map_gmail_errors(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

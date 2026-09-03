@@ -26,6 +26,10 @@ class TemplateResponse(BaseModel):
     email_count: int
 
 
+class TemplateDetailResponse(TemplateResponse):
+    example: EmailDetail | None
+
+
 class EmailPage(BaseModel):
     items: list[EmailSummary]
     total: int

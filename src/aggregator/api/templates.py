@@ -9,8 +9,8 @@ from peewee import SqliteDatabase
 
 from ..queries import PAGE_SIZE, template_by_id, template_page
 from .dependencies import database_dependency
-from .schemas import TemplatePage, TemplateResponse
-from .serializers import template_response
+from .schemas import TemplateDetailResponse, TemplatePage
+from .serializers import email_detail, template_response
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 
@@ -31,13 +31,17 @@ def list_templates(
     )
 
 
-@router.get("/{template_id}", response_model=TemplateResponse)
+@router.get("/{template_id}", response_model=TemplateDetailResponse)
 def get_template(
     template_id: int,
     database: Annotated[SqliteDatabase, Depends(database_dependency)],
-) -> TemplateResponse:
+) -> TemplateDetailResponse:
     del database
     template = template_by_id(template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="Template not found")
-    return template_response(template)
+    example = template.example_email()
+    return TemplateDetailResponse(
+        **template_response(template).model_dump(),
+        example=email_detail(example) if example is not None else None,
+    )
