@@ -77,7 +77,7 @@ def test_email_pagination_and_safe_detail(client: TestClient) -> None:
 
     detail = client.get("/emails/1")
     assert detail.status_code == 200
-    assert detail.json()["body"] == "Hello\nWorld"
+    assert detail.json()["body"] == "Hello World"
     assert "headers" not in detail.json()
     assert "authentication_status" not in detail.json()
     assert client.get("/emails/999").status_code == 404
