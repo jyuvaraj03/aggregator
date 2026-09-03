@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 
@@ -43,6 +44,15 @@ MASKING_INSTRUCTIONS = (
         "NUMBER",
     ),
 )
+
+# Drain3 uses these markers for values masked by this application's mining
+# configuration. ``<*>`` is its generic variable marker.
+TEMPLATE_PARAMETER_PATTERN = re.compile(r"<(?:DATE|TIME|CURRENCY_CODE|NUMBER|\*)>")
+
+
+def template_parameter_count(template_text: str) -> int:
+    """Return the number of extractable parameter positions in a template."""
+    return len(TEMPLATE_PARAMETER_PATTERN.findall(template_text))
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,13 +93,7 @@ def get_extracted_parameters(
 ) -> list[ExtractedParameter]:
     """Extract the ordered masked values for a record and a mined template."""
     miner = _create_miner()
-    print(template_text)
-    print("\n--------------\n")
-    print(mining_record.text)
-    print("\n--------------\n")
     parameters = miner.extract_parameters(template_text, mining_record.text) or []
-    print(parameters)
-    print("\n--------------\n")
     return list(parameters)
 
 

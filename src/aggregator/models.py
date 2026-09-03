@@ -5,12 +5,14 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from enum import StrEnum
+from typing import TYPE_CHECKING, cast
 
 from bs4 import BeautifulSoup
 from peewee import CharField, DateTimeField, ForeignKeyField, Model, TextField
 
 from .database import database
+from .template_mining import template_parameter_count
 
 if TYPE_CHECKING:
     from .template_representation import TemplateRepresentation
@@ -30,6 +32,30 @@ class JSONTextField(TextField):
         return {}
 
 
+class JSONIntegerListField(TextField):
+    """Store an ordered list of integer values as JSON in SQLite."""
+
+    def db_value(self, value: object) -> str:
+        if not isinstance(value, (list, tuple)) or any(type(item) is not int for item in value):
+            raise TypeError("Expected a list of integers")
+        return json.dumps(list(value))
+
+    def python_value(self, value: object) -> list[int]:
+        if isinstance(value, str):
+            decoded = json.loads(value)
+        else:
+            decoded = value
+        if isinstance(decoded, list) and all(type(item) is int for item in decoded):
+            return decoded
+        raise ValueError("Expected a JSON list of integers")
+
+
+class FieldParserRule(StrEnum):
+    EXTRACTED = "extracted"
+    CONSTANT = "constant"
+    MISSING = "missing"
+
+
 class Template(Model):
     """A Drain3 pattern extracted from one or more email bodies."""
 
@@ -42,6 +68,72 @@ class Template(Model):
     class Meta:
         database = database
         table_name = "templates"
+
+
+class Field(Model):
+    """A globally named value that can be parsed from one or more templates."""
+
+    name = CharField(unique=True)
+
+    class Meta:
+        database = database
+        table_name = "fields"
+
+
+class FieldParser(Model):
+    """One template-specific rule for resolving a global field."""
+
+    template = ForeignKeyField(Template, backref="field_parsers", on_delete="CASCADE")
+    field = ForeignKeyField(Field, backref="field_parsers", on_delete="CASCADE")
+    rule = CharField()
+    parameter_indices = JSONIntegerListField(default=list)
+    constant_value = TextField(null=True)
+
+    def validate(self) -> None:
+        """Reject rule payloads that cannot be resolved for this template."""
+        try:
+            rule = FieldParserRule(self.rule)
+        except ValueError as error:
+            raise ValueError(f"Unsupported field parser rule: {self.rule!r}") from error
+
+        indices = cast(list[int], self.parameter_indices)
+        if rule is FieldParserRule.EXTRACTED:
+            if not indices:
+                raise ValueError("An extracted field parser requires at least one parameter index")
+            if len(indices) != len(set(indices)):
+                raise ValueError(
+                    "An extracted field parser cannot contain duplicate parameter indices"
+                )
+            if any(index < 0 for index in indices):
+                raise ValueError(
+                    "An extracted field parser cannot contain negative parameter indices"
+                )
+            parameter_count = template_parameter_count(self.template.text)
+            if any(index >= parameter_count for index in indices):
+                raise ValueError(
+                    "An extracted field parser references an unavailable parameter index"
+                )
+            if self.constant_value is not None:
+                raise ValueError("An extracted field parser cannot have a constant value")
+            return
+
+        if indices:
+            raise ValueError(f"A {rule.value} field parser cannot have parameter indices")
+        if rule is FieldParserRule.CONSTANT:
+            if self.constant_value is None:
+                raise ValueError("A constant field parser requires a constant value")
+            return
+        if self.constant_value is not None:
+            raise ValueError("A missing field parser cannot have a constant value")
+
+    def save(self, *args: object, **kwargs: object) -> int:
+        self.validate()
+        return super().save(*args, **kwargs)  # pyright: ignore[reportArgumentType, reportUnknownMemberType]
+
+    class Meta:
+        database = database
+        table_name = "field_parsers"
+        indexes = ((("template", "field"), True),)
 
 
 class Email(Model):

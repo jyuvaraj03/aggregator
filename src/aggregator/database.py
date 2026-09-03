@@ -15,7 +15,7 @@ DATABASE_PATH = Path(
 )
 database = SqliteDatabase(
     str(DATABASE_PATH),
-    pragmas={"journal_mode": "wal", "busy_timeout": 5_000},
+    pragmas={"journal_mode": "wal", "busy_timeout": 5_000, "foreign_keys": 1},
     timeout=5,
 )
 

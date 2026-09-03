@@ -6,6 +6,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from peewee import IntegrityError
 from playhouse.migrations import Runner
 
 from aggregator.database import (
@@ -15,7 +16,7 @@ from aggregator.database import (
     connect_database,
     database,
 )
-from aggregator.models import Email, Template
+from aggregator.models import Email, Field, FieldParser, FieldParserRule, Template
 from aggregator.template_assignment import (
     TemplateAssignmentResult,
     assign_email_templates,
@@ -262,6 +263,122 @@ def test_email_representation_returns_template_and_ordered_parameters() -> None:
         ("$", "CURRENCY_CODE"),
         ("7.20", "NUMBER"),
     ]
+
+
+def test_email_representation_resolves_extracted_constant_and_missing_fields() -> None:
+    template = Template.create(
+        text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
+    )
+    email = _email("order", "<p>Order #42 confirmed for $7.20</p>", template=template)
+    amount = Field.create(name="amount")
+    status = Field.create(name="status")
+    merchant = Field.create(name="merchant")
+    FieldParser.create(
+        template=template,
+        field=amount,
+        rule=FieldParserRule.EXTRACTED,
+        parameter_indices=[1, 2],
+    )
+    FieldParser.create(
+        template=template,
+        field=status,
+        rule=FieldParserRule.CONSTANT,
+        constant_value="confirmed",
+    )
+    FieldParser.create(template=template, field=merchant, rule=FieldParserRule.MISSING)
+
+    representation = email.representation()
+
+    assert representation is not None
+    assert representation.resolved_fields == {
+        "amount": "$ 7.20",
+        "status": "confirmed",
+        "merchant": None,
+    }
+
+
+def test_email_representation_has_no_resolved_fields_without_parsers() -> None:
+    template = Template.create(text="Order #<NUMBER> confirmed")
+    email = _email("order", "<p>Order #42 confirmed</p>", template=template)
+
+    representation = email.representation()
+
+    assert representation is not None
+    assert representation.resolved_fields == {}
+
+
+@pytest.mark.parametrize(
+    ("rule", "indices", "constant_value", "message"),
+    [
+        (FieldParserRule.EXTRACTED, [], None, "requires at least one"),
+        (FieldParserRule.EXTRACTED, [0, 0], None, "duplicate"),
+        (FieldParserRule.EXTRACTED, [-1], None, "negative"),
+        (FieldParserRule.EXTRACTED, [1], None, "unavailable"),
+        (FieldParserRule.EXTRACTED, [0], "value", "cannot have a constant"),
+        (FieldParserRule.CONSTANT, [0], "value", "cannot have parameter"),
+        (FieldParserRule.CONSTANT, [], None, "requires a constant"),
+        (FieldParserRule.MISSING, [0], None, "cannot have parameter"),
+        (FieldParserRule.MISSING, [], "value", "cannot have a constant"),
+        ("unknown", [], None, "Unsupported"),
+    ],
+)
+def test_field_parser_rejects_invalid_rule_configuration(
+    rule: FieldParserRule | str, indices: list[int], constant_value: str | None, message: str
+) -> None:
+    template = Template.create(text="Order #<NUMBER> confirmed")
+    field = Field.create(name="order_number")
+
+    with pytest.raises(ValueError, match=message):
+        FieldParser.create(
+            template=template,
+            field=field,
+            rule=rule,
+            parameter_indices=indices,
+            constant_value=constant_value,
+        )
+
+
+def test_field_and_parser_constraints_and_cascades() -> None:
+    template = Template.create(text="Order #<NUMBER> confirmed")
+    field = Field.create(name="order_number")
+    FieldParser.create(
+        template=template,
+        field=field,
+        rule=FieldParserRule.EXTRACTED,
+        parameter_indices=[0],
+    )
+
+    with pytest.raises(IntegrityError):
+        Field.create(name="order_number")
+    with pytest.raises(IntegrityError):
+        FieldParser.create(
+            template=template,
+            field=field,
+            rule=FieldParserRule.MISSING,
+        )
+
+    field.delete_instance()
+
+    assert FieldParser.select().count() == 0
+
+
+def test_representation_defensively_revalidates_stale_parser_indices() -> None:
+    template = Template.create(text="Order #<NUMBER> confirmed")
+    field = Field.create(name="order_number")
+    FieldParser.insert(
+        template=template,
+        field=field,
+        rule=FieldParserRule.EXTRACTED,
+        parameter_indices=[1],
+        constant_value=None,
+    ).execute()
+    email = _email("order", "<p>Order #42 confirmed</p>", template=template)
+
+    representation = email.representation()
+
+    assert representation is not None
+    with pytest.raises(ValueError, match="unavailable"):
+        _ = representation.resolved_fields
 
 
 def test_unassigned_email_has_no_representation() -> None:
