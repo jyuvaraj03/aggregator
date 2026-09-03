@@ -1,4 +1,4 @@
-"""Pure JaccardDrain template-mining primitives."""
+"""Pure Drain3 template mining primitives."""
 
 # Drain3 is intentionally dynamically typed.
 # pyright: reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
@@ -8,9 +8,8 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 
-from drain3.jaccard_drain import JaccardDrain
+from drain3 import TemplateMiner
 from drain3.masking import MaskingInstruction
-from drain3.template_miner import TemplateMiner
 from drain3.template_miner_config import TemplateMinerConfig
 
 MINIMUM_CLUSTER_SIZE = 3
@@ -52,7 +51,7 @@ class MiningRecord:
 
 @dataclass(frozen=True, slots=True)
 class MinedPattern:
-    """An eligible JaccardDrain pattern and its source records, in input order."""
+    """An eligible Drain3 pattern and its source records, in input order."""
 
     text: str
     record_ids: tuple[Hashable, ...]
@@ -67,37 +66,20 @@ class MiningResult:
     patterns: tuple[MinedPattern, ...]
 
 
-def create_template_miner() -> TemplateMiner:
-    """Create an in-memory JaccardDrain miner with this module's masking rules."""
+def _create_miner() -> TemplateMiner:
+    """Create the in-memory miner with this module's masking rules."""
     config = TemplateMinerConfig()
     config.masking_instructions = list(MASKING_INSTRUCTIONS)
-    miner = TemplateMiner(config=config)
-
-    # TemplateMiner provides masking, profiling, and parameter extraction setup,
-    # but the pinned Drain3 version does not reliably select JaccardDrain from
-    # configuration. Replace its fresh, unused Drain engine with the equivalent
-    # Jaccard implementation instead.
-    miner.drain = JaccardDrain(
-        depth=config.drain_depth,
-        sim_th=config.drain_sim_th,
-        max_children=config.drain_max_children,
-        max_clusters=config.drain_max_clusters,
-        extra_delimiters=tuple(config.drain_extra_delimiters),
-        profiler=miner.profiler,
-        param_str=f"{config.mask_prefix}*{config.mask_suffix}",
-        parametrize_numeric_tokens=config.parametrize_numeric_tokens,
-    )
-    config.engine = "JaccardDrain"
-    return miner
+    return TemplateMiner(config=config)
 
 
 def bulk_mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
     """Mine eligible patterns from records without reading or writing persistence.
 
-    Empty or whitespace-only text is skipped. Pattern order follows JaccardDrain's
+    Empty or whitespace-only text is skipped. Pattern order follows Drain3's
     cluster creation order and each pattern's record IDs retain input order.
     """
-    miner = create_template_miner()
+    miner = _create_miner()
     record_ids_by_cluster: dict[int, list[Hashable]] = {}
     skipped_record_ids: list[Hashable] = []
     processed = 0

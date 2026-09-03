@@ -6,7 +6,6 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from drain3.jaccard_drain import JaccardDrain
 from playhouse.migrations import Runner
 
 from aggregator.database import (
@@ -17,29 +16,21 @@ from aggregator.database import (
     database,
 )
 from aggregator.models import Email, Template
-from aggregator.template_assignment import (
-    TemplateAssignmentResult,
-    assign_email_templates,
-)
 from aggregator.template_mining import (
     MASKING_INSTRUCTIONS,
     MinedPattern,
     MiningRecord,
     MiningResult,
     bulk_mine_templates,
-    create_template_miner,
+)
+from aggregator.template_assignment import (
+    TemplateAssignmentResult,
+    assign_email_templates,
 )
 
 
 def test_bulk_mine_templates_returns_no_patterns_for_empty_input() -> None:
     assert bulk_mine_templates([]) == MiningResult(0, (), ())
-
-
-def test_miner_factory_uses_jaccard_drain() -> None:
-    miner = create_template_miner()
-
-    assert isinstance(miner.drain, JaccardDrain)
-    assert miner.config.engine == "JaccardDrain"
 
 
 def test_bulk_mine_templates_skips_empty_records_and_preserves_assignment_order() -> None:
