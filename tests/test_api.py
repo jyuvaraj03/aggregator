@@ -72,7 +72,9 @@ def test_email_pagination_and_safe_detail(client: TestClient) -> None:
         "sender",
         "subject",
         "template_id",
+        "representation",
     }
+    assert payload["items"][0]["representation"] is None
     assert client.get("/emails?page=0").status_code == 422
 
     detail = client.get("/emails/1")
@@ -103,6 +105,10 @@ def test_email_template_filtering(client: TestClient) -> None:
                 "sender": "sender@example.com",
                 "subject": "Subject 3",
                 "template_id": first.id,
+                "representation": {
+                    "template_text": "first",
+                    "extracted_parameters": [],
+                },
             },
             {
                 "id": 1,
@@ -111,6 +117,10 @@ def test_email_template_filtering(client: TestClient) -> None:
                 "sender": "sender@example.com",
                 "subject": "Subject 1",
                 "template_id": first.id,
+                "representation": {
+                    "template_text": "first",
+                    "extracted_parameters": [],
+                },
             },
         ],
         "total": 2,
@@ -126,6 +136,7 @@ def test_email_template_filtering(client: TestClient) -> None:
         "message-4",
     ]
     assert untagged.json()["total"] == 2
+    assert all(item["representation"] is None for item in untagged.json()["items"])
 
     all_emails = client.get("/emails")
     assert all_emails.status_code == 200
@@ -177,6 +188,31 @@ def test_template_detail_includes_earliest_email_as_example(client: TestClient) 
         },
     }
     assert client.get(f"/templates/{empty_template.id}").json()["example"] is None
+
+
+def test_email_representation_is_consistent_for_index_and_detail(client: TestClient) -> None:
+    template = Template.create(
+        text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
+    )
+    email = _email(1, template=template)
+    email.body_html = "<p>Order #42 confirmed for $7.20</p>"
+    email.save()
+
+    expected = {
+        "template_text": "Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>",
+        "extracted_parameters": [
+            {"value": "42", "mask_name": "NUMBER"},
+            {"value": "$", "mask_name": "CURRENCY_CODE"},
+            {"value": "7.20", "mask_name": "NUMBER"},
+        ],
+    }
+
+    index_item = client.get("/emails").json()["items"][0]
+    detail = client.get(f"/emails/{email.id}")
+
+    assert index_item["representation"] == expected
+    assert detail.status_code == 200
+    assert detail.json()["representation"] == expected
 
 
 def test_actions_validate_delegate_and_map_gmail_errors(

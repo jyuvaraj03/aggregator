@@ -5,11 +5,15 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup
 from peewee import CharField, DateTimeField, ForeignKeyField, Model, TextField
 
 from .database import database
+
+if TYPE_CHECKING:
+    from .template_representation import TemplateRepresentation
 
 
 class JSONTextField(TextField):
@@ -57,6 +61,17 @@ class Email(Model):
     def readable_body(self) -> str:
         soup = BeautifulSoup(self.body_html or "", "html.parser")
         return " ".join(soup.get_text("\n", strip=True).split())
+
+    def representation(self) -> TemplateRepresentation | None:
+        """Return this email's template and values, if it has been assigned."""
+        if self.template_id is None:
+            return None
+
+        # Delaying this import keeps the ORM model and representation helper
+        # independent at import time.
+        from .template_representation import represent_email_template
+
+        return represent_email_template(self)
 
     class Meta:
         database = database

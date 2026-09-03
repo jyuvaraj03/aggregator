@@ -10,7 +10,7 @@ from peewee import SqliteDatabase
 from ..queries import PAGE_SIZE, template_by_id, template_page
 from .dependencies import database_dependency
 from .schemas import TemplateDetailResponse, TemplatePage
-from .serializers import email_detail, template_response
+from .serializers import template_email_example, template_response
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 
@@ -43,5 +43,5 @@ def get_template(
     example = template.example_email()
     return TemplateDetailResponse(
         **template_response(template).model_dump(),
-        example=email_detail(example) if example is not None else None,
+        example=template_email_example(example) if example is not None else None,
     )

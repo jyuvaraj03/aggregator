@@ -7,6 +7,16 @@ from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 
+class ExtractedParameterResponse(BaseModel):
+    value: str
+    mask_name: str
+
+
+class EmailRepresentationResponse(BaseModel):
+    template_text: str
+    extracted_parameters: list[ExtractedParameterResponse]
+
+
 class EmailSummary(BaseModel):
     id: int
     message_id: str
@@ -14,9 +24,20 @@ class EmailSummary(BaseModel):
     sender: str
     subject: str | None
     template_id: int | None
+    representation: EmailRepresentationResponse | None
 
 
 class EmailDetail(EmailSummary):
+    body: str
+
+
+class TemplateEmailExample(BaseModel):
+    id: int
+    message_id: str
+    received_at: datetime
+    sender: str
+    subject: str | None
+    template_id: int | None
     body: str
 
 
@@ -27,7 +48,7 @@ class TemplateResponse(BaseModel):
 
 
 class TemplateDetailResponse(TemplateResponse):
-    example: EmailDetail | None
+    example: TemplateEmailExample | None
 
 
 class EmailPage(BaseModel):

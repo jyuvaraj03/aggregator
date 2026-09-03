@@ -26,6 +26,7 @@ from aggregator.template_mining import (
     MiningRecord,
     MiningResult,
     bulk_mine_templates,
+    get_extracted_parameters,
 )
 
 
@@ -189,6 +190,18 @@ def test_number_masking_regex_finds_numbers_between_common_delimiters(
     assert MASKING_INSTRUCTIONS[3].regex.findall(text) == expected
 
 
+def test_parameter_extraction_supports_amount_immediately_after_rs_dot() -> None:
+    parameters = get_extracted_parameters(
+        MiningRecord("payment", "Payment Rs.700.00"),
+        "Payment <CURRENCY_CODE><NUMBER>",
+    )
+
+    assert [(parameter.value, parameter.mask_name) for parameter in parameters] == [
+        ("Rs.", "CURRENCY_CODE"),
+        ("700.00", "NUMBER"),
+    ]
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -228,6 +241,31 @@ def _email(message_id: str, body_html: str, *, template: Template | None = None)
         headers={},
         template=template,
     )
+
+
+def test_email_representation_returns_template_and_ordered_parameters() -> None:
+    template = Template.create(
+        text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
+    )
+    email = _email("order", "<p>Order #42 confirmed for $7.20</p>", template=template)
+
+    representation = email.representation()
+
+    assert representation is not None
+    assert representation.template_text == template.text
+    parameters = [
+        (parameter.value, parameter.mask_name)
+        for parameter in representation.extracted_parameters
+    ]
+    assert parameters == [
+        ("42", "NUMBER"),
+        ("$", "CURRENCY_CODE"),
+        ("7.20", "NUMBER"),
+    ]
+
+
+def test_unassigned_email_has_no_representation() -> None:
+    assert _email("untagged", "<p>Order #42 confirmed</p>").representation() is None
 
 
 def test_assignment_loads_untagged_html_emails_and_assigns_template() -> None:

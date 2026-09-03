@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from drain3 import TemplateMiner
 from drain3.masking import MaskingInstruction
+from drain3.template_miner import ExtractedParameter
 from drain3.template_miner_config import TemplateMinerConfig
 
 MINIMUM_CLUSTER_SIZE = 3
@@ -38,7 +39,7 @@ MASKING_INSTRUCTIONS = (
         "CURRENCY_CODE",
     ),
     MaskingInstruction(
-        r"(?<![\w.,])[+-]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.\d+)?(?![\w]|\.\d|,\d)",
+        r"(?:(?<![\w.,])|(?<=(?i:rs\.)))[+-]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.\d+)?(?![\w]|\.\d|,\d)",
         "NUMBER",
     ),
 )
@@ -75,6 +76,21 @@ def _create_miner() -> TemplateMiner:
     config.masking_instructions = list(MASKING_INSTRUCTIONS)
     # config.drain_extra_delimiters = ["."]
     return TemplateMiner(config=config)
+
+
+def get_extracted_parameters(
+    mining_record: MiningRecord, template_text: str
+) -> list[ExtractedParameter]:
+    """Extract the ordered masked values for a record and a mined template."""
+    miner = _create_miner()
+    print(template_text)
+    print("\n--------------\n")
+    print(mining_record.text)
+    print("\n--------------\n")
+    parameters = miner.extract_parameters(template_text, mining_record.text) or []
+    print(parameters)
+    print("\n--------------\n")
+    return list(parameters)
 
 
 def bulk_mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
