@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -9,8 +10,14 @@ from pathlib import Path
 from peewee import SqliteDatabase
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATABASE_PATH = PROJECT_ROOT / "aggregator.sqlite3"
-database = SqliteDatabase(str(DATABASE_PATH))
+DATABASE_PATH = Path(
+    os.environ.get("AGGREGATOR_DATABASE_PATH", PROJECT_ROOT / "aggregator.sqlite3")
+)
+database = SqliteDatabase(
+    str(DATABASE_PATH),
+    pragmas={"journal_mode": "wal", "busy_timeout": 5_000},
+    timeout=5,
+)
 
 
 def connect_database() -> None:

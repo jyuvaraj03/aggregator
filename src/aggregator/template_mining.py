@@ -60,6 +60,17 @@ def mine_templates(emails: Iterable[Email]) -> TemplateMiningResult:
     )
 
 
+def mine_untagged_templates() -> TemplateMiningResult:
+    """Mine every email that has not yet been associated with a template."""
+    with database_connection():
+        emails = (
+            Email.select()
+            .where(Email.template.is_null())
+            .order_by(Email.received_at, Email.id)
+        )
+        return mine_templates(emails)
+
+
 def _mine_emails(emails: Iterable[Email]) -> tuple[TemplateMiner, dict[int, int], list[int]]:
     config = TemplateMinerConfig()
     config.masking_instructions = list(MASKING_INSTRUCTIONS)
