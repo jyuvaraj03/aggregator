@@ -66,15 +66,20 @@ class MiningResult:
     patterns: tuple[MinedPattern, ...]
 
 
-def mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
+def _create_miner() -> TemplateMiner:
+    """Create the in-memory miner with this module's masking rules."""
+    config = TemplateMinerConfig()
+    config.masking_instructions = list(MASKING_INSTRUCTIONS)
+    return TemplateMiner(config=config)
+
+
+def bulk_mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
     """Mine eligible patterns from records without reading or writing persistence.
 
     Empty or whitespace-only text is skipped. Pattern order follows Drain3's
     cluster creation order and each pattern's record IDs retain input order.
     """
-    config = TemplateMinerConfig()
-    config.masking_instructions = list(MASKING_INSTRUCTIONS)
-    miner = TemplateMiner(config=config)
+    miner = _create_miner()
     record_ids_by_cluster: dict[int, list[Hashable]] = {}
     skipped_record_ids: list[Hashable] = []
     processed = 0

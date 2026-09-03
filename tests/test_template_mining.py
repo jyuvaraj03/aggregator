@@ -21,7 +21,7 @@ from aggregator.template_mining import (
     MinedPattern,
     MiningRecord,
     MiningResult,
-    mine_templates,
+    bulk_mine_templates,
 )
 from aggregator.template_assignment import (
     TemplateAssignmentResult,
@@ -29,12 +29,12 @@ from aggregator.template_assignment import (
 )
 
 
-def test_mine_templates_returns_no_patterns_for_empty_input() -> None:
-    assert mine_templates([]) == MiningResult(0, (), ())
+def test_bulk_mine_templates_returns_no_patterns_for_empty_input() -> None:
+    assert bulk_mine_templates([]) == MiningResult(0, (), ())
 
 
-def test_mine_templates_skips_empty_records_and_preserves_assignment_order() -> None:
-    result = mine_templates(
+def test_bulk_mine_templates_skips_empty_records_and_preserves_assignment_order() -> None:
+    result = bulk_mine_templates(
         [
             MiningRecord("blank", "  "),
             MiningRecord("first", "Order #100 confirmed for $7.20"),
@@ -55,8 +55,8 @@ def test_mine_templates_skips_empty_records_and_preserves_assignment_order() -> 
     )
 
 
-def test_mine_templates_masks_dates_currency_numbers_and_times() -> None:
-    result = mine_templates(
+def test_bulk_mine_templates_masks_dates_currency_numbers_and_times() -> None:
+    result = bulk_mine_templates(
         [
             MiningRecord(1, "Payment 100 at 09:30 AM on 2026-09-01: Rs. 7.20"),
             MiningRecord(2, "Payment 101 at 21:30:45 on 09/02/2026: Rs 18.00"),
@@ -71,8 +71,8 @@ def test_mine_templates_masks_dates_currency_numbers_and_times() -> None:
     )
 
 
-def test_mine_templates_excludes_clusters_below_minimum_size() -> None:
-    result = mine_templates(
+def test_bulk_mine_templates_excludes_clusters_below_minimum_size() -> None:
+    result = bulk_mine_templates(
         [
             MiningRecord(1, "Payment #100 received"),
             MiningRecord(2, "Payment #101 received"),

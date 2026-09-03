@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .database import database, database_connection
 from .models import Email, Template
-from .template_mining import MinedPattern, MiningRecord, mine_templates
+from .template_mining import MinedPattern, MiningRecord, bulk_mine_templates
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +28,7 @@ def assign_email_templates() -> TemplateAssignmentResult:
             .where(Email.template.is_null())
             .order_by(Email.received_at, Email.id)
         )
-        result = mine_templates(
+        result = bulk_mine_templates(
             MiningRecord(record_id=email.id, text=email.readable_body()) for email in emails
         )
         templates_created = _store_and_assign(result.patterns)
