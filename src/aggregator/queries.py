@@ -21,9 +21,19 @@ class Page[ModelType: (Email, Template)]:
     total: int
 
 
-def email_page(page: int) -> Page[Email]:
+@dataclass(frozen=True, slots=True)
+class EmailTemplateFilter:
+    """An exact template filter, including the untagged-email case."""
+
+    template_id: int | None
+
+
+def email_page(page: int, template_filter: EmailTemplateFilter | None = None) -> Page[Email]:
     """Return emails newest first in fixed-size pages."""
-    query = Email.select().order_by(Email.received_at.desc(), Email.id.desc())
+    query = Email.select()
+    if template_filter is not None:
+        query = query.where(Email.template == template_filter.template_id)
+    query = query.order_by(Email.received_at.desc(), Email.id.desc())
     return Page[Email](list(query.paginate(page, PAGE_SIZE)), query.count())
 
 

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from peewee import SqliteDatabase
 
-from ..queries import PAGE_SIZE, email_by_id, email_page
+from ..queries import (
+    PAGE_SIZE,
+    EmailTemplateFilter,
+    email_by_id,
+    email_page,
+    template_by_id,
+)
 from .dependencies import database_dependency
 from .schemas import EmailDetail, EmailPage
 from .serializers import email_detail, email_summary
@@ -19,9 +25,18 @@ router = APIRouter(prefix="/emails", tags=["emails"])
 def list_emails(
     database: Annotated[SqliteDatabase, Depends(database_dependency)],
     page: int = Query(default=1, ge=1),
+    template_id: int | Literal["null"] | None = Query(default=None),
 ) -> EmailPage:
     del database
-    result = email_page(page)
+    template_filter = None
+    if isinstance(template_id, int):
+        if template_by_id(template_id) is None:
+            raise HTTPException(status_code=404, detail="Template not found")
+        template_filter = EmailTemplateFilter(template_id)
+    elif template_id == "null":
+        template_filter = EmailTemplateFilter(None)
+
+    result = email_page(page, template_filter)
     return EmailPage(
         items=[email_summary(email) for email in result.items],
         total=result.total,

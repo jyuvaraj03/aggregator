@@ -66,7 +66,12 @@ def test_email_pagination_and_safe_detail(client: TestClient) -> None:
     assert len(payload["items"]) == 50
     assert payload["items"][0]["message_id"] == "message-50"
     assert set(payload["items"][0]) == {
-        "id", "message_id", "received_at", "sender", "subject", "template_id"
+        "id",
+        "message_id",
+        "received_at",
+        "sender",
+        "subject",
+        "template_id",
     }
     assert client.get("/emails?page=0").status_code == 422
 
@@ -76,6 +81,59 @@ def test_email_pagination_and_safe_detail(client: TestClient) -> None:
     assert "headers" not in detail.json()
     assert "authentication_status" not in detail.json()
     assert client.get("/emails/999").status_code == 404
+
+
+def test_email_template_filtering(client: TestClient) -> None:
+    first = Template.create(text="first")
+    second = Template.create(text="second")
+    _email(1, template=first)
+    _email(2, template=second)
+    _email(3, template=first)
+    _email(4)
+    _email(5)
+
+    filtered = client.get(f"/emails?template_id={first.id}")
+    assert filtered.status_code == 200
+    assert filtered.json() == {
+        "items": [
+            {
+                "id": 3,
+                "message_id": "message-3",
+                "received_at": "2026-09-01T00:03:00Z",
+                "sender": "sender@example.com",
+                "subject": "Subject 3",
+                "template_id": first.id,
+            },
+            {
+                "id": 1,
+                "message_id": "message-1",
+                "received_at": "2026-09-01T00:01:00Z",
+                "sender": "sender@example.com",
+                "subject": "Subject 1",
+                "template_id": first.id,
+            },
+        ],
+        "total": 2,
+        "page": 1,
+        "page_size": 50,
+        "total_pages": 1,
+    }
+
+    untagged = client.get("/emails?template_id=null")
+    assert untagged.status_code == 200
+    assert [item["message_id"] for item in untagged.json()["items"]] == [
+        "message-5",
+        "message-4",
+    ]
+    assert untagged.json()["total"] == 2
+
+    all_emails = client.get("/emails")
+    assert all_emails.status_code == 200
+    assert all_emails.json()["total"] == 5
+    missing_template = client.get("/emails?template_id=999")
+    assert missing_template.status_code == 404
+    assert missing_template.json() == {"detail": "Template not found"}
+    assert client.get("/emails?template_id=invalid").status_code == 422
 
 
 def test_template_counts_and_missing_resource(client: TestClient) -> None:

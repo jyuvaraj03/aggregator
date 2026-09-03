@@ -1,0 +1,11 @@
+meta {
+  name: List Untagged Emails
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/emails?page=1&template_id=null
+  body: none
+  auth: none
+}
