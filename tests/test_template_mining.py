@@ -16,16 +16,16 @@ from aggregator.database import (
     database,
 )
 from aggregator.models import Email, Template
+from aggregator.template_assignment import (
+    TemplateAssignmentResult,
+    assign_email_templates,
+)
 from aggregator.template_mining import (
     MASKING_INSTRUCTIONS,
     MinedPattern,
     MiningRecord,
     MiningResult,
     bulk_mine_templates,
-)
-from aggregator.template_assignment import (
-    TemplateAssignmentResult,
-    assign_email_templates,
 )
 
 
@@ -65,10 +65,20 @@ def test_bulk_mine_templates_masks_dates_currency_numbers_and_times() -> None:
     )
 
     assert result.patterns == (
-        MinedPattern(
-            "Payment <NUMBER> at <TIME> on <DATE>: <CURRENCY_CODE><NUMBER>", (1, 2, 3)
-        ),
+        MinedPattern("Payment <NUMBER> at <TIME> on <DATE>: <CURRENCY_CODE><NUMBER>", (1, 2, 3)),
     )
+
+
+def test_bulk_mine_templates_masks_a_ten_digit_number() -> None:
+    result = bulk_mine_templates(
+        [
+            MiningRecord(1, "OTP 7308080808 generated"),
+            MiningRecord(2, "OTP 7308080808 generated"),
+            MiningRecord(3, "OTP 7308080808 generated"),
+        ]
+    )
+
+    assert result.patterns == (MinedPattern("OTP <NUMBER> generated", (1, 2, 3)),)
 
 
 def test_bulk_mine_templates_excludes_clusters_below_minimum_size() -> None:
@@ -87,8 +97,15 @@ def test_bulk_mine_templates_excludes_clusters_below_minimum_size() -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        "2026-09-03", "2026/9/3", "2026.09.3", "03-09-2026", "3/9/26",
-        "Aug 23, 2026", "aug. 23rd 2026", "September 1st, 26", "23 Aug 2026",
+        "2026-09-03",
+        "2026/9/3",
+        "2026.09.3",
+        "03-09-2026",
+        "3/9/26",
+        "Aug 23, 2026",
+        "aug. 23rd 2026",
+        "September 1st, 26",
+        "23 Aug 2026",
         "23rd August, 2026",
     ],
 )
@@ -102,6 +119,91 @@ def test_date_masking_regex_matches_supported_date_formats(value: str) -> None:
 )
 def test_date_masking_regex_rejects_invalid_or_embedded_dates(value: str) -> None:
     assert MASKING_INSTRUCTIONS[0].regex.search(value) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0",
+        "007",
+        "42",
+        "+42",
+        "-42",
+        "1.0",
+        "123.456",
+        "1,234",
+        "12,345,678",
+        "1,23,456",
+        "12,34,567",
+        "1,23,45,678",
+        "1,234.56",
+        "12,34,567.89",
+        "+1,234.56",
+        "-12,345,678.90",
+    ],
+)
+def test_number_masking_regex_matches_supported_number_formats(value: str) -> None:
+    assert MASKING_INSTRUCTIONS[3].regex.fullmatch(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "+",
+        "-",
+        ".5",
+        "+.5",
+        "-.5",
+        "5.",
+        "1.2.3",
+        "1,23",
+        "123,45,678",
+        "1,,234",
+        "1,2345",
+        "1,234.",
+        "1,234.5.6",
+        "123,",
+        "1_000",
+        "1e3",
+        "NaN",
+        "Infinity",
+    ],
+)
+def test_number_masking_regex_rejects_unsupported_number_formats(value: str) -> None:
+    assert MASKING_INSTRUCTIONS[3].regex.fullmatch(value) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Order #42 confirmed", ["42"]),
+        ("Balances: -7, +8.25, and 1,234.50.", ["-7", "+8.25", "1,234.50"]),
+        ("($1,250.50) or ₹0", ["1,250.50", "0"]),
+        ("[007]; {12,345,678}; ₹12,34,567.89", ["007", "12,345,678", "12,34,567.89"]),
+    ],
+)
+def test_number_masking_regex_finds_numbers_between_common_delimiters(
+    text: str, expected: list[str]
+) -> None:
+    assert MASKING_INSTRUCTIONS[3].regex.findall(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "item42",
+        "42items",
+        "version1.2",
+        "1.2release",
+        "a1,234",
+        "1,234b",
+    ],
+)
+def test_number_masking_regex_does_not_match_numbers_embedded_in_words_or_dotted_tokens(
+    text: str,
+) -> None:
+    assert MASKING_INSTRUCTIONS[3].regex.search(text) is None
 
 
 @pytest.fixture(autouse=True)

@@ -37,7 +37,10 @@ MASKING_INSTRUCTIONS = (
         r"(?:[$€£¥₹]|(?<!\w)(?:(?i:USD|EUR|GBP|INR|JPY|CAD|AUD)(?!\w)|(?i:RS\.?)(?![A-Za-z_])))\s*",
         "CURRENCY_CODE",
     ),
-    MaskingInstruction(r"(?<![\w.])[+-]?\d+(?:,\d{3})*(?:\.\d+)?(?![\w.])", "NUMBER"),
+    MaskingInstruction(
+        r"(?<![\w.,])[+-]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.\d+)?(?![\w]|\.\d|,\d)",
+        "NUMBER",
+    ),
 )
 
 
@@ -70,6 +73,7 @@ def _create_miner() -> TemplateMiner:
     """Create the in-memory miner with this module's masking rules."""
     config = TemplateMinerConfig()
     config.masking_instructions = list(MASKING_INSTRUCTIONS)
+    # config.drain_extra_delimiters = ["."]
     return TemplateMiner(config=config)
 
 
