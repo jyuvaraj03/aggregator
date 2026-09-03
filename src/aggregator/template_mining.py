@@ -16,12 +16,24 @@ from .models import Email, Template
 
 MINIMUM_CLUSTER_SIZE = 3
 
-# Keep dates before generic numbers so their components remain intact. Currency
-# codes are masked separately, leaving their amounts as number masks.
+# Keep dates and times before generic numbers so their components remain intact.
+# Currency codes are masked separately, leaving their amounts as number masks.
 MASKING_INSTRUCTIONS = (
     MaskingInstruction(
-        r"(?<!\d)(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})(?!\d)",
+        r"(?<!\w)(?:"
+        r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|"
+        r"(?i:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+        r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+        r"\.?\s+\d{1,2}(?i:st|nd|rd|th)?\s*,?\s*\d{2,4}|"
+        r"\d{1,2}(?i:st|nd|rd|th)?\s+(?i:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|"
+        r"apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
+        r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*,?\s*\d{2,4}"
+        r")(?!\w)",
         "DATE",
+    ),
+    MaskingInstruction(
+        r"(?<![\w:])(?:0?\d|1\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:[.,]\d{1,6})?)?(?:\s*(?i:a\.?m\.?|p\.?m\.?))?(?:\s*(?:Z|(?i:UTC|GMT)(?:\s*[+-]\d{1,2}(?::?\d{2})?)?|[+-]\d{2}:?\d{2}))?(?![\w:])",
+        "TIME",
     ),
     MaskingInstruction(
         r"(?:[$€£¥₹]|(?<!\w)(?:(?i:USD|EUR|GBP|INR|JPY|CAD|AUD)(?!\w)|(?i:RS\.?)(?![A-Za-z_])))\s*",

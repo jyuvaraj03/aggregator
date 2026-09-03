@@ -10,8 +10,9 @@ Usage:
 """
 
 from drain3 import TemplateMiner
-from drain3.masking import MaskingInstruction
 from drain3.template_miner_config import TemplateMinerConfig
+
+from aggregator.template_mining import MASKING_INSTRUCTIONS
 
 
 class TemplateMinerPlayground:
@@ -62,18 +63,5 @@ class TemplateMinerPlayground:
     @staticmethod
     def _new_miner() -> TemplateMiner:
         config = TemplateMinerConfig()
-        config.masking_instructions = [
-            MaskingInstruction(
-                r"(?<!\d)(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})(?!\d)",
-                "DATE",
-            ),
-            MaskingInstruction(
-                r"(?:[$€£¥₹]|(?<!\w)(?:(?i:USD|EUR|GBP|INR|JPY|CAD|AUD)(?!\w)|(?i:RS\.?)(?![A-Za-z_])))\s*",
-                "CURRENCY_CODE",
-            ),
-            MaskingInstruction(
-                r"(?<![\w.])[+-]?\d+(?:,\d{3})*(?:\.\d+)?(?![\w.])",
-                "NUMBER",
-            ),
-        ]
+        config.masking_instructions = list(MASKING_INSTRUCTIONS)
         return TemplateMiner(config=config)

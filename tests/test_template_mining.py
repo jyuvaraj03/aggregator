@@ -17,7 +17,11 @@ from aggregator.database import (
     database,
 )
 from aggregator.models import Email, Template
-from aggregator.template_mining import TemplateMiningResult, mine_templates
+from aggregator.template_mining import (
+    MASKING_INSTRUCTIONS,
+    TemplateMiningResult,
+    mine_templates,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -87,6 +91,71 @@ def test_mine_templates_masks_dates_currency_and_numbers() -> None:
         Template.get().text
         == "Invoice <NUMBER> issued on <DATE>: total <CURRENCY_CODE><NUMBER>"
     )
+
+
+def test_mine_templates_masks_dates_with_month_names() -> None:
+    emails = [
+        _email("one", "<p>Statement issued on Aug 23, 2026</p>"),
+        _email("two", "<p>Statement issued on August 23, 2026</p>"),
+        _email("three", "<p>Statement issued on 23rd August 2026</p>"),
+    ]
+
+    result = mine_templates(emails)
+
+    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
+    assert Template.get().text == "Statement issued on <DATE>"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-09-03",
+        "2026/9/3",
+        "2026.09.3",
+        "03-09-2026",
+        "3/9/26",
+        "Aug 23, 2026",
+        "aug. 23rd 2026",
+        "September 1st, 26",
+        "23 Aug 2026",
+        "23rd August, 2026",
+    ],
+)
+def test_date_masking_regex_matches_supported_date_formats(value: str) -> None:
+    date_regex = MASKING_INSTRUCTIONS[0].regex
+
+    assert date_regex.fullmatch(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "order2026-09-03",
+        "2026-09-03receipt",
+        "2026-9",  # incomplete numeric date
+        "Foo 23, 2026",
+        "August 23",  # year is required for month-name dates
+        "23 August",  # year is required for day-first dates
+        "23rd Augx 2026",
+    ],
+)
+def test_date_masking_regex_does_not_match_invalid_or_embedded_dates(value: str) -> None:
+    date_regex = MASKING_INSTRUCTIONS[0].regex
+
+    assert date_regex.search(value) is None
+
+
+def test_mine_templates_masks_common_time_formats() -> None:
+    emails = [
+        _email("one", "<p>Payment completed at 09:30 AM on 2026-09-01</p>"),
+        _email("two", "<p>Payment completed at 21:30:45 on 2026-09-02</p>"),
+        _email("three", "<p>Payment completed at 21:30:45.123 UTC+05:30 on 2026-09-03</p>"),
+    ]
+
+    result = mine_templates(emails)
+
+    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
+    assert Template.get().text == "Payment completed at <TIME> on <DATE>"
 
 
 def test_mine_templates_does_not_mask_words_containing_currency_code_letters() -> None:
