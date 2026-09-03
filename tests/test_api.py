@@ -16,7 +16,7 @@ from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, dat
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
 from aggregator.models import Email, Template
-from aggregator.template_mining import TemplateMiningResult
+from aggregator.template_assignment import TemplateAssignmentResult
 
 
 @pytest.fixture(autouse=True)
@@ -191,8 +191,8 @@ def test_actions_validate_delegate_and_map_gmail_errors(
     monkeypatch.setattr(actions, "sync_messages", sync)
     monkeypatch.setattr(
         actions,
-        "mine_untagged_templates",
-        lambda: TemplateMiningResult(processed=4, skipped=1, templates_created=1),
+        "assign_email_templates",
+        lambda: TemplateAssignmentResult(processed=4, skipped=1, templates_created=1),
     )
 
     sync_response = client.post(
@@ -205,7 +205,7 @@ def test_actions_validate_delegate_and_map_gmail_errors(
     }
     assert captured["label"] == "Receipts"
     assert client.post("/email-sync", json={"label": "Receipts"}).status_code == 422
-    assert client.post("/email-template-mining").json() == {
+    assert client.post("/email-template-assignment").json() == {
         "processed": 4,
         "skipped": 1,
         "templates_created": 1,

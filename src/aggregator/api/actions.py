@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..email_sync import sync_messages
-from ..template_mining import mine_untagged_templates
-from .schemas import EmailSyncRequest, MiningResponse, SyncResponse
+from ..template_assignment import assign_email_templates
+from .schemas import EmailSyncRequest, SyncResponse, TemplateAssignmentResponse
 
 router = APIRouter(tags=["actions"])
 
@@ -21,10 +21,10 @@ def sync_email(request: EmailSyncRequest) -> SyncResponse:
     )
 
 
-@router.post("/email-template-mining", response_model=MiningResponse)
-def mine_email_templates() -> MiningResponse:
-    result = mine_untagged_templates()
-    return MiningResponse(
+@router.post("/email-template-assignment", response_model=TemplateAssignmentResponse)
+def assign_email_templates_action() -> TemplateAssignmentResponse:
+    result = assign_email_templates()
+    return TemplateAssignmentResponse(
         processed=result.processed,
         skipped=result.skipped,
         templates_created=result.templates_created,

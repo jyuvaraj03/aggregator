@@ -1,18 +1,16 @@
-"""Extract reusable templates from persisted email bodies with Drain3."""
+"""Pure Drain3 template mining primitives."""
 
-# Drain3 and Peewee's model query methods are intentionally dynamically typed.
-# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+# Drain3 is intentionally dynamically typed.
+# pyright: reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 
 from drain3 import TemplateMiner
 from drain3.masking import MaskingInstruction
 from drain3.template_miner_config import TemplateMinerConfig
-
-from .database import database, database_connection
-from .models import Email, Template
 
 MINIMUM_CLUSTER_SIZE = 3
 
@@ -44,82 +42,62 @@ MASKING_INSTRUCTIONS = (
 
 
 @dataclass(frozen=True, slots=True)
-class TemplateMiningResult:
-    """Counts produced while mining one supplied batch of emails."""
+class MiningRecord:
+    """A single piece of text supplied to the in-memory miner."""
+
+    record_id: Hashable
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class MinedPattern:
+    """An eligible Drain3 pattern and its source records, in input order."""
+
+    text: str
+    record_ids: tuple[Hashable, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MiningResult:
+    """The database-independent outcome of mining a batch of records."""
 
     processed: int
-    skipped: int
-    templates_created: int
+    skipped_record_ids: tuple[Hashable, ...]
+    patterns: tuple[MinedPattern, ...]
 
 
-def mine_templates(emails: Iterable[Email]) -> TemplateMiningResult:
-    """Mine Drain3 templates for emails in the iterable's supplied order.
+def mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
+    """Mine eligible patterns from records without reading or writing persistence.
 
-    The miner is deliberately in-memory: this is a batch operation, rather than
-    a persistent or incremental Drain3 state machine. Empty readable bodies are
-    left without a template.
+    Empty or whitespace-only text is skipped. Pattern order follows Drain3's
+    cluster creation order and each pattern's record IDs retain input order.
     """
-    with database_connection():
-        miner, cluster_ids_by_email_id, empty_email_ids = _mine_emails(emails)
-        with database.atomic():
-            templates_by_cluster_id = _store_templates(miner)
-            _tag_emails(cluster_ids_by_email_id, empty_email_ids, templates_by_cluster_id)
-
-    return TemplateMiningResult(
-        processed=len(cluster_ids_by_email_id),
-        skipped=len(empty_email_ids),
-        templates_created=len(templates_by_cluster_id),
-    )
-
-
-def mine_untagged_templates() -> TemplateMiningResult:
-    """Mine every email that has not yet been associated with a template."""
-    with database_connection():
-        emails = (
-            Email.select()
-            .where(Email.template.is_null())
-            .order_by(Email.received_at, Email.id)
-        )
-        return mine_templates(emails)
-
-
-def _mine_emails(emails: Iterable[Email]) -> tuple[TemplateMiner, dict[int, int], list[int]]:
     config = TemplateMinerConfig()
     config.masking_instructions = list(MASKING_INSTRUCTIONS)
     miner = TemplateMiner(config=config)
-    cluster_ids_by_email_id: dict[int, int] = {}
-    empty_email_ids: list[int] = []
+    record_ids_by_cluster: dict[int, list[Hashable]] = {}
+    skipped_record_ids: list[Hashable] = []
+    processed = 0
 
-    for email in emails:
-        readable_body = email.readable_body()
-        if not readable_body:
-            empty_email_ids.append(email.id)
+    for record in records:
+        if not record.text.strip():
+            skipped_record_ids.append(record.record_id)
             continue
-        result = miner.add_log_message(readable_body)
-        cluster_ids_by_email_id[email.id] = int(result["cluster_id"])
+        result = miner.add_log_message(record.text)
+        cluster_id = int(result["cluster_id"])
+        record_ids_by_cluster.setdefault(cluster_id, []).append(record.record_id)
+        processed += 1
 
-    return miner, cluster_ids_by_email_id, empty_email_ids
-
-
-def _store_templates(miner: TemplateMiner) -> dict[int, Template]:
-    return {
-        cluster.cluster_id: Template.get_or_create(text=cluster.get_template())[0]
+    patterns = tuple(
+        MinedPattern(
+            text=cluster.get_template(),
+            record_ids=tuple(record_ids_by_cluster[cluster.cluster_id]),
+        )
         for cluster in miner.drain.clusters
         if cluster.size >= MINIMUM_CLUSTER_SIZE
-    }
-
-
-def _tag_emails(
-    cluster_ids_by_email_id: Mapping[int, int],
-    empty_email_ids: Iterable[int],
-    templates_by_cluster_id: Mapping[int, Template],
-) -> None:
-    for email_id, cluster_id in cluster_ids_by_email_id.items():
-        if cluster_id not in templates_by_cluster_id:
-            continue
-        query = Email.update(template=templates_by_cluster_id[cluster_id]).where(
-            Email.id == email_id
-        )
-        query.execute()
-    if empty_ids := list(empty_email_ids):
-        Email.update(template=None).where(Email.id.in_(empty_ids)).execute()
+    )
+    return MiningResult(
+        processed=processed,
+        skipped_record_ids=tuple(skipped_record_ids),
+        patterns=patterns,
+    )

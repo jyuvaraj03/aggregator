@@ -4,7 +4,7 @@
 from datetime import date, timedelta
 
 from aggregator.email_sync import sync_messages
-from aggregator.template_mining import mine_templates
+from aggregator.template_assignment import assign_email_templates
 
 from .database import database_connection
 from .email_pull import pull_messages
@@ -28,14 +28,8 @@ def get_last_email() -> Email | None:
 
 def mine_test():
     with database_connection():
-        # print(sync_test("Transactions", date.today() - timedelta(days=20)))
-        all_emails = (
-            Email.select()
-            .where(Email.template.is_null())
-            .order_by(Email.received_at.desc())
-        )
-        mining_result = mine_templates(all_emails)
-        print(mining_result)
+        assignment_result = assign_email_templates()
+        print(assignment_result)
         templates = Template.select()
         for template in templates:
             print(template.text)

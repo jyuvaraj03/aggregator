@@ -57,7 +57,7 @@ class SyncResponse(BaseModel):
     already_stored: int
 
 
-class MiningResponse(BaseModel):
+class TemplateAssignmentResponse(BaseModel):
     processed: int
     skipped: int
     templates_created: int

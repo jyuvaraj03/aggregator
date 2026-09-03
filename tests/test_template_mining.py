@@ -1,10 +1,9 @@
-# Drain3 and Peewee's model query methods are intentionally dynamically typed.
-# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
-
 from __future__ import annotations
 
+# Drain3, Peewee, and its migration helper are dynamically typed.
+# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from playhouse.migrations import Runner
@@ -19,9 +18,90 @@ from aggregator.database import (
 from aggregator.models import Email, Template
 from aggregator.template_mining import (
     MASKING_INSTRUCTIONS,
-    TemplateMiningResult,
+    MinedPattern,
+    MiningRecord,
+    MiningResult,
     mine_templates,
 )
+from aggregator.template_assignment import (
+    TemplateAssignmentResult,
+    assign_email_templates,
+)
+
+
+def test_mine_templates_returns_no_patterns_for_empty_input() -> None:
+    assert mine_templates([]) == MiningResult(0, (), ())
+
+
+def test_mine_templates_skips_empty_records_and_preserves_assignment_order() -> None:
+    result = mine_templates(
+        [
+            MiningRecord("blank", "  "),
+            MiningRecord("first", "Order #100 confirmed for $7.20"),
+            MiningRecord("second", "Order #101 confirmed for $8.10"),
+            MiningRecord("third", "Order #102 confirmed for $9.00"),
+        ]
+    )
+
+    assert result == MiningResult(
+        processed=3,
+        skipped_record_ids=("blank",),
+        patterns=(
+            MinedPattern(
+                "Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>",
+                ("first", "second", "third"),
+            ),
+        ),
+    )
+
+
+def test_mine_templates_masks_dates_currency_numbers_and_times() -> None:
+    result = mine_templates(
+        [
+            MiningRecord(1, "Payment 100 at 09:30 AM on 2026-09-01: Rs. 7.20"),
+            MiningRecord(2, "Payment 101 at 21:30:45 on 09/02/2026: Rs 18.00"),
+            MiningRecord(3, "Payment 102 at 21:30:45.123 UTC+05:30 on 2026.09.03: Rs1,250.50"),
+        ]
+    )
+
+    assert result.patterns == (
+        MinedPattern(
+            "Payment <NUMBER> at <TIME> on <DATE>: <CURRENCY_CODE><NUMBER>", (1, 2, 3)
+        ),
+    )
+
+
+def test_mine_templates_excludes_clusters_below_minimum_size() -> None:
+    result = mine_templates(
+        [
+            MiningRecord(1, "Payment #100 received"),
+            MiningRecord(2, "Payment #101 received"),
+            MiningRecord(3, "Password reset requested"),
+        ]
+    )
+
+    assert result.processed == 3
+    assert result.patterns == ()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-09-03", "2026/9/3", "2026.09.3", "03-09-2026", "3/9/26",
+        "Aug 23, 2026", "aug. 23rd 2026", "September 1st, 26", "23 Aug 2026",
+        "23rd August, 2026",
+    ],
+)
+def test_date_masking_regex_matches_supported_date_formats(value: str) -> None:
+    assert MASKING_INSTRUCTIONS[0].regex.fullmatch(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["order2026-09-03", "2026-09-03receipt", "2026-9", "Foo 23, 2026", "August 23"],
+)
+def test_date_masking_regex_rejects_invalid_or_embedded_dates(value: str) -> None:
+    assert MASKING_INSTRUCTIONS[0].regex.search(value) is None
 
 
 @pytest.fixture(autouse=True)
@@ -37,182 +117,47 @@ def in_memory_database() -> Generator[None]:
         database.init(str(DATABASE_PATH))  # pyright: ignore[reportUnknownMemberType]
 
 
-def _email(message_id: str, body_html: str) -> Email:
+def _email(message_id: str, body_html: str, *, template: Template | None = None) -> Email:
     return Email.create(
         message_id=message_id,
-        received_at=datetime(2026, 9, 1, tzinfo=UTC),
+        received_at=datetime(2026, 9, 1, tzinfo=UTC) + timedelta(minutes=Email.select().count()),
         sender="merchant@example.com",
         body_html=body_html,
         headers={},
+        template=template,
     )
 
 
-def test_mine_templates_persists_final_pattern_and_tags_matching_emails() -> None:
-    first = _email("one", "<p>Order #100 confirmed for $7.20</p>")
-    second = _email("two", "<p>Order #101 confirmed for $8.10</p>")
-    third = _email("three", "<p>Order #102 confirmed for $9.00</p>")
+def test_assignment_loads_untagged_html_emails_and_assigns_template() -> None:
+    tagged = Template.create(text="already tagged")
+    _email("tagged", "<p>Order #999 confirmed</p>", template=tagged)
+    emails = [_email(str(index), f"<h1>Order</h1><p>#{index} confirmed</p>") for index in range(3)]
+    _email("empty", "<script>secret()</script><div> </div>")
 
-    result = mine_templates([first, second, third])
+    result = assign_email_templates()
 
-    first = Email.get_by_id(first.id)
-    second = Email.get_by_id(second.id)
-    third = Email.get_by_id(third.id)
-    template = Template.get()
-    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
-    assert template.text == "Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
-    assert first.template_id == template.id
-    assert second.template_id == template.id
-    assert third.template_id == template.id
+    template = Template.get(Template.text == "Order #<NUMBER> confirmed")
+    assert result == TemplateAssignmentResult(processed=3, skipped=1, templates_created=1)
+    assert [Email.get_by_id(email.id).template_id for email in emails] == [template.id] * 3
+    assert Email.get_by_id(1).template_id == tagged.id
 
 
-def test_mine_templates_uses_readable_html_and_skips_empty_bodies() -> None:
-    receipt = _email("receipt", "<h1>Receipt</h1><p>Total 5</p>")
-    empty = _email("empty", "<div> </div>")
+def test_assignment_reuses_existing_template_without_counting_it_as_new() -> None:
+    existing = Template.create(text="Order #<NUMBER> confirmed")
+    emails = [_email(str(index), f"<p>Order #{index} confirmed</p>") for index in range(3)]
 
-    result = mine_templates([receipt, empty])
+    result = assign_email_templates()
 
-    assert result == TemplateMiningResult(processed=1, skipped=1, templates_created=0)
-    assert Template.select().count() == 0
-    assert Email.get_by_id(receipt.id).template_id is None
-    assert Email.get_by_id(empty.id).template_id is None
+    assert result == TemplateAssignmentResult(processed=3, skipped=0, templates_created=0)
+    assert [Email.get_by_id(email.id).template_id for email in emails] == [existing.id] * 3
 
 
-def test_mine_templates_masks_dates_currency_and_numbers() -> None:
-    emails = [
-        _email("one", "<p>Invoice 100 issued on 2026-09-01: total Rs. 7.20</p>"),
-        _email("two", "<p>Invoice 101 issued on 09/02/2026: total Rs 18.00</p>"),
-        _email("three", "<p>Invoice 102 issued on 2026.09.03: total Rs1,250.50</p>"),
-    ]
-
-    result = mine_templates(emails)
-
-    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
-    assert (
-        Template.get().text
-        == "Invoice <NUMBER> issued on <DATE>: total <CURRENCY_CODE><NUMBER>"
-    )
-
-
-def test_mine_templates_masks_dates_with_month_names() -> None:
-    emails = [
-        _email("one", "<p>Statement issued on Aug 23, 2026</p>"),
-        _email("two", "<p>Statement issued on August 23, 2026</p>"),
-        _email("three", "<p>Statement issued on 23rd August 2026</p>"),
-    ]
-
-    result = mine_templates(emails)
-
-    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
-    assert Template.get().text == "Statement issued on <DATE>"
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "2026-09-03",
-        "2026/9/3",
-        "2026.09.3",
-        "03-09-2026",
-        "3/9/26",
-        "Aug 23, 2026",
-        "aug. 23rd 2026",
-        "September 1st, 26",
-        "23 Aug 2026",
-        "23rd August, 2026",
-    ],
-)
-def test_date_masking_regex_matches_supported_date_formats(value: str) -> None:
-    date_regex = MASKING_INSTRUCTIONS[0].regex
-
-    assert date_regex.fullmatch(value)
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "order2026-09-03",
-        "2026-09-03receipt",
-        "2026-9",  # incomplete numeric date
-        "Foo 23, 2026",
-        "August 23",  # year is required for month-name dates
-        "23 August",  # year is required for day-first dates
-        "23rd Augx 2026",
-    ],
-)
-def test_date_masking_regex_does_not_match_invalid_or_embedded_dates(value: str) -> None:
-    date_regex = MASKING_INSTRUCTIONS[0].regex
-
-    assert date_regex.search(value) is None
-
-
-def test_mine_templates_masks_common_time_formats() -> None:
-    emails = [
-        _email("one", "<p>Payment completed at 09:30 AM on 2026-09-01</p>"),
-        _email("two", "<p>Payment completed at 21:30:45 on 2026-09-02</p>"),
-        _email("three", "<p>Payment completed at 21:30:45.123 UTC+05:30 on 2026-09-03</p>"),
-    ]
-
-    result = mine_templates(emails)
-
-    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
-    assert Template.get().text == "Payment completed at <TIME> on <DATE>"
-
-
-def test_mine_templates_does_not_mask_words_containing_currency_code_letters() -> None:
-    emails = [
-        _email(f"plumber-{index}", "<p>Our plumbers. are ready</p>")
-        for index in range(3)
-    ]
-
-    result = mine_templates(emails)
-
-    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=1)
-    assert Template.get().text == "Our plumbers. are ready"
-
-
-def test_mine_templates_leaves_clusters_smaller_than_three_untagged() -> None:
-    first = _email("one", "<p>Payment #100 received</p>")
-    second = _email("two", "<p>Payment #101 received</p>")
-    third = _email("three", "<p>Password reset requested</p>")
-
-    result = mine_templates([first, second, third])
-
-    assert result == TemplateMiningResult(processed=3, skipped=0, templates_created=0)
-    assert Template.select().count() == 0
-    assert Email.get_by_id(first.id).template_id is None
-    assert Email.get_by_id(second.id).template_id is None
-    assert Email.get_by_id(third.id).template_id is None
-
-
-def test_mine_templates_tags_only_eligible_clusters() -> None:
-    eligible = [
-        _email("order-one", "<p>Order #100 confirmed</p>"),
-        _email("order-two", "<p>Order #101 confirmed</p>"),
-        _email("order-three", "<p>Order #102 confirmed</p>"),
-    ]
-    ineligible = [
-        _email("reset-one", "<p>Password reset for A</p>"),
-        _email("reset-two", "<p>Password reset for B</p>"),
-    ]
-
-    result = mine_templates([*eligible, *ineligible])
-
-    assert result == TemplateMiningResult(processed=5, skipped=0, templates_created=1)
-    template = Template.get()
-    assert [Email.get_by_id(email.id).template_id for email in eligible] == [template.id] * 3
-    assert [Email.get_by_id(email.id).template_id for email in ineligible] == [None] * 2
-
-
-def test_mine_templates_rolls_back_template_writes_when_persistence_fails(
+def test_assignment_rolls_back_when_template_creation_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     emails = [
-        _email("payment-one", "<p>Payment #100 received</p>"),
-        _email("payment-two", "<p>Payment #101 received</p>"),
-        _email("payment-three", "<p>Payment #102 received</p>"),
-        _email("reset-one", "<p>Password reset for A</p>"),
-        _email("reset-two", "<p>Password reset for B</p>"),
-        _email("reset-three", "<p>Password reset for C</p>"),
+        *[_email(f"order-{index}", f"<p>Order #{index} confirmed</p>") for index in range(3)],
+        *[_email(f"reset-{index}", f"<p>Password reset #{index}</p>") for index in range(3)],
     ]
     original_create = Template.create
     calls = 0
@@ -221,13 +166,26 @@ def test_mine_templates_rolls_back_template_writes_when_persistence_fails(
         nonlocal calls
         calls += 1
         if calls == 2:
-            raise RuntimeError("template write failed")
+            raise RuntimeError("template creation failed")
         return original_create(**values)
 
     monkeypatch.setattr(Template, "create", fail_second_create)
-
-    with pytest.raises(RuntimeError, match="template write failed"):
-        mine_templates(emails)
+    with pytest.raises(RuntimeError, match="template creation failed"):
+        assign_email_templates()
 
     assert Template.select().count() == 0
-    assert [Email.get_by_id(email.id).template_id for email in emails] == [None] * len(emails)
+    assert [Email.get_by_id(email.id).template_id for email in emails] == [None] * 6
+
+
+def test_assignment_rolls_back_when_assignment_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    emails = [_email(str(index), f"<p>Order #{index} confirmed</p>") for index in range(3)]
+
+    def fail_assignment() -> int:
+        raise RuntimeError("assignment failed")
+
+    monkeypatch.setattr("peewee.ModelUpdate.execute", lambda _: fail_assignment())
+    with pytest.raises(RuntimeError, match="assignment failed"):
+        assign_email_templates()
+
+    assert Template.select().count() == 0
+    assert [Email.get_by_id(email.id).template_id for email in emails] == [None] * 3
