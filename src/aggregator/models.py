@@ -52,7 +52,7 @@ class Email(Model):
 
     def readable_body(self) -> str:
         soup = BeautifulSoup(self.body_html or "", "html.parser")
-        return soup.get_text("\n", strip=True)
+        return " ".join(soup.get_text("\n", strip=True).split())
 
     class Meta:
         database = database
