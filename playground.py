@@ -1,4 +1,4 @@
-"""A reversible Drain3 template-mining playground for use in a Python console.
+"""A reversible JaccardDrain template-mining playground for a Python console.
 
 Usage:
     >>> from playground import TemplateMinerPlayground
@@ -9,21 +9,20 @@ Usage:
     >>> miner.reset()
 """
 
-from drain3 import TemplateMiner
-from drain3.template_miner_config import TemplateMinerConfig
+from drain3.template_miner import TemplateMiner
 
-from aggregator.template_mining import MASKING_INSTRUCTIONS
+from aggregator.template_mining import create_template_miner
 
 
 class TemplateMinerPlayground:
-    """Keep an in-memory Drain3 miner whose most recent input can be undone."""
+    """Keep an in-memory JaccardDrain miner whose latest input can be undone."""
 
     def __init__(self) -> None:
         self.inputs: list[str] = []
         self._miner = self._new_miner()
 
     def add(self, message: str) -> dict[str, object]:
-        """Add a message and return Drain3's event plus the current clusters."""
+        """Add a message and return JaccardDrain's event plus current clusters."""
         result = self._miner.add_log_message(message)
         self.inputs.append(message)
         return {"event": result, "clusters": self.clusters()}
@@ -62,6 +61,4 @@ class TemplateMinerPlayground:
 
     @staticmethod
     def _new_miner() -> TemplateMiner:
-        config = TemplateMinerConfig()
-        config.masking_instructions = list(MASKING_INSTRUCTIONS)
-        return TemplateMiner(config=config)
+        return create_template_miner()
