@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
@@ -145,6 +146,27 @@ class TemplateDetailResponse(TemplateResponse):
 
 class EmailPage(BaseModel):
     items: list[EmailSummary]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class TransactionResponse(BaseModel):
+    id: int
+    email_id: int
+    amount: Decimal | None
+    currency_code: str | None
+    payee: str | None
+    description: str | None
+    transaction_date: date | None
+    account_hint: str | None
+    is_credit: bool | None
+    representation: EmailRepresentationResponse | None
+
+
+class TransactionPage(BaseModel):
+    items: list[TransactionResponse]
     total: int
     page: int
     page_size: int

@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
-from ..models import Email, Template
+from decimal import Decimal
+from typing import cast
+
+from ..models import Email, Template, Transaction
 from .schemas import (
     EmailDetail,
     EmailDetailRepresentationResponse,
@@ -15,11 +18,21 @@ from .schemas import (
     ResolvedTransactionFields,
     TemplateEmailExample,
     TemplateResponse,
+    TransactionResponse,
 )
 
 
-def email_summary(email: Email) -> EmailSummary:
+def email_representation(email: Email) -> EmailRepresentationResponse | None:
     representation = email.representation()
+    if representation is None:
+        return None
+    return EmailRepresentationResponse(
+        template_text=representation.template_text,
+        resolved_fields=ResolvedTransactionFields.model_validate(representation.resolved_fields),
+    )
+
+
+def email_summary(email: Email) -> EmailSummary:
     return EmailSummary(
         id=email.id,
         message_id=email.message_id,
@@ -27,16 +40,7 @@ def email_summary(email: Email) -> EmailSummary:
         sender=email.sender,
         subject=email.subject,
         template_id=email.template_id,
-        representation=(
-            EmailRepresentationResponse(
-                template_text=representation.template_text,
-                resolved_fields=ResolvedTransactionFields.model_validate(
-                    representation.resolved_fields
-                ),
-            )
-            if representation is not None
-            else None
-        ),
+        representation=email_representation(email),
     )
 
 
@@ -88,4 +92,19 @@ def template_response(template: Template) -> TemplateResponse:
         id=template.id,
         text=template.text,
         email_count=int(getattr(template, "email_count", 0)),
+    )
+
+
+def transaction_response(transaction: Transaction) -> TransactionResponse:
+    return TransactionResponse(
+        id=transaction.id,
+        email_id=transaction.email_id,
+        amount=cast(Decimal | None, transaction.amount),
+        currency_code=transaction.currency_code,
+        payee=transaction.payee,
+        description=transaction.description,
+        transaction_date=transaction.transaction_date,
+        account_hint=transaction.account_hint,
+        is_credit=transaction.is_credit,
+        representation=email_representation(transaction.email),
     )

@@ -3,7 +3,8 @@ from __future__ import annotations
 # Peewee and its migration helper are dynamically typed.
 # pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownMemberType=false
 from collections.abc import Generator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ from aggregator.api.app import app
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
-from aggregator.models import TRANSACTION_FIELD_NAMES, Email, FieldParser, Template
+from aggregator.models import TRANSACTION_FIELD_NAMES, Email, FieldParser, Template, Transaction
 from aggregator.template_assignment import TemplateAssignmentResult
 from aggregator.transaction_extraction import TransactionExtractionResult
 
@@ -336,6 +337,90 @@ def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient)
     assert "extracted_parameters" not in list_representation
     assert list_representation["resolved_fields"] == expected
     assert detail_representation["resolved_fields"] == expected
+
+
+def test_transaction_pagination_fields_and_email_representation(client: TestClient) -> None:
+    template = Template.create(text="Paid <NUMBER>")
+    represented_email = _email(0, template=template)
+    represented_email.body_html = "<p>Paid 19</p>"
+    represented_email.save()
+    parser_response = client.put(
+        f"/templates/{template.id}/field-parsers",
+        json={
+            "amount": {"rule": "extracted", "parameter_indices": [0]},
+            "payee": {"rule": "constant", "constant_value": "Example Shop"},
+        },
+    )
+    assert parser_response.status_code == 200
+    represented_transaction = Transaction.create(
+        email=represented_email,
+        amount=Decimal("19.00"),
+        currency_code="USD",
+        payee="Example Shop",
+        description="Purchase",
+        transaction_date=date(2026, 9, 1),
+        account_hint="1234",
+        is_credit=False,
+    )
+    for index in range(1, 51):
+        Transaction.create(email=_email(index))
+
+    first_page = client.get("/transactions?page=1")
+
+    assert first_page.status_code == 200
+    payload = first_page.json()
+    assert payload["total"] == 51
+    assert payload["page"] == 1
+    assert payload["page_size"] == 50
+    assert payload["total_pages"] == 2
+    assert len(payload["items"]) == 50
+    assert payload["items"][0]["email_id"] == 51
+    assert payload["items"][0]["representation"] is None
+    assert set(payload["items"][0]) == {
+        "id",
+        "email_id",
+        "amount",
+        "currency_code",
+        "payee",
+        "description",
+        "transaction_date",
+        "account_hint",
+        "is_credit",
+        "representation",
+    }
+
+    second_page = client.get("/transactions?page=2")
+
+    assert second_page.status_code == 200
+    assert second_page.json() == {
+        "items": [
+            {
+                "id": represented_transaction.id,
+                "email_id": represented_email.id,
+                "amount": "19.00",
+                "currency_code": "USD",
+                "payee": "Example Shop",
+                "description": "Purchase",
+                "transaction_date": "2026-09-01",
+                "account_hint": "1234",
+                "is_credit": False,
+                "representation": {
+                    "template_text": "Paid <NUMBER>",
+                    "resolved_fields": {
+                        **dict.fromkeys(TRANSACTION_FIELD_NAMES),
+                        "amount": "19",
+                        "payee": "Example Shop",
+                    },
+                },
+            }
+        ],
+        "total": 51,
+        "page": 2,
+        "page_size": 50,
+        "total_pages": 2,
+    }
+    assert "extracted_parameters" not in second_page.json()["items"][0]["representation"]
+    assert client.get("/transactions?page=0").status_code == 422
 
 
 def test_actions_validate_delegate_and_map_gmail_errors(

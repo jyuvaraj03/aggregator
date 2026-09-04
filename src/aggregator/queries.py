@@ -8,13 +8,13 @@ from dataclasses import dataclass
 
 from peewee import JOIN, fn
 
-from .models import Email, Template
+from .models import Email, Template, Transaction
 
 PAGE_SIZE = 50
 
 
 @dataclass(frozen=True, slots=True)
-class Page[ModelType: (Email, Template)]:
+class Page[ModelType: (Email, Template, Transaction)]:
     """A page of model instances plus its total count."""
 
     items: list[ModelType]
@@ -40,6 +40,16 @@ def email_page(page: int, template_filter: EmailTemplateFilter | None = None) ->
 def email_by_id(email_id: int) -> Email | None:
     """Return one email, if present."""
     return Email.get_or_none(Email.id == email_id)
+
+
+def transaction_page(page: int) -> Page[Transaction]:
+    """Return transactions by newest associated email in fixed-size pages."""
+    query = (
+        Transaction.select(Transaction, Email)
+        .join(Email)
+        .order_by(Email.received_at.desc(), Email.id.desc())
+    )
+    return Page[Transaction](list(query.paginate(page, PAGE_SIZE)), query.count())
 
 
 def template_page(page: int) -> Page[Template]:
