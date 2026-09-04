@@ -42,9 +42,7 @@ def sync_messages(label: str, from_date: date | datetime) -> SyncResult:
                 stored_ids.add(message.message_id)
                 inserted += 1
 
-    return SyncResult(
-        pulled=len(messages), inserted=inserted, already_stored=already_stored
-    )
+    return SyncResult(pulled=len(messages), inserted=inserted, already_stored=already_stored)
 
 
 def _existing_message_ids(messages: list[EmailMessage]) -> set[str]:

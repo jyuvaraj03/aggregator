@@ -3,8 +3,85 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+
+
+class ResolvedTransactionFields(BaseModel):
+    amount: str | None = None
+    currency_code: str | None = None
+    payee: str | None = None
+    description: str | None = None
+    transaction_date: str | None = None
+    account_hint: str | None = None
+    is_credit: str | None = None
+
+
+class ExtractedFieldParser(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule: Literal["extracted"]
+    parameter_indices: list[StrictInt]
+
+    @field_validator("parameter_indices")
+    @classmethod
+    def validate_parameter_indices(cls, indices: list[int]) -> list[int]:
+        if not indices:
+            raise ValueError("An extracted field parser requires at least one parameter index")
+        if len(indices) != len(set(indices)):
+            raise ValueError("An extracted field parser cannot contain duplicate parameter indices")
+        if any(index < 0 for index in indices):
+            raise ValueError("An extracted field parser cannot contain negative parameter indices")
+        return indices
+
+
+class ConstantFieldParser(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule: Literal["constant"]
+    constant_value: str
+
+
+class MissingFieldParser(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule: Literal["missing"]
+
+
+FieldParserConfiguration = Annotated[
+    ExtractedFieldParser | ConstantFieldParser | MissingFieldParser,
+    Field(discriminator="rule"),
+]
+
+
+class FieldParserSet(BaseModel):
+    """The complete fixed parser set; null and omitted values are unconfigured."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: FieldParserConfiguration | None = None
+    currency_code: FieldParserConfiguration | None = None
+    payee: FieldParserConfiguration | None = None
+    description: FieldParserConfiguration | None = None
+    transaction_date: FieldParserConfiguration | None = None
+    account_hint: FieldParserConfiguration | None = None
+    is_credit: FieldParserConfiguration | None = None
+
+
+class TemplateParameterResponse(BaseModel):
+    index: int
+    mask_name: str
+    value: str | None
+
+
+class TemplateFieldParsersResponse(BaseModel):
+    template_id: int
+    text: str
+    example_email_id: int | None
+    parameters: list[TemplateParameterResponse]
+    parsers: FieldParserSet
+    preview: ResolvedTransactionFields | None
 
 
 class ExtractedParameterResponse(BaseModel):
@@ -17,6 +94,10 @@ class EmailRepresentationResponse(BaseModel):
     extracted_parameters: list[ExtractedParameterResponse]
 
 
+class EmailDetailRepresentationResponse(EmailRepresentationResponse):
+    resolved_fields: ResolvedTransactionFields
+
+
 class EmailSummary(BaseModel):
     id: int
     message_id: str
@@ -27,8 +108,15 @@ class EmailSummary(BaseModel):
     representation: EmailRepresentationResponse | None
 
 
-class EmailDetail(EmailSummary):
+class EmailDetail(BaseModel):
+    id: int
+    message_id: str
+    received_at: datetime
+    sender: str
+    subject: str | None
+    template_id: int | None
     body: str
+    representation: EmailDetailRepresentationResponse | None
 
 
 class TemplateEmailExample(BaseModel):

@@ -15,7 +15,7 @@ from aggregator.api.app import app
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
-from aggregator.models import Email, Template
+from aggregator.models import TRANSACTION_FIELD_NAMES, Email, Field, FieldParser, Template
 from aggregator.template_assignment import TemplateAssignmentResult
 
 
@@ -191,9 +191,7 @@ def test_template_detail_includes_earliest_email_as_example(client: TestClient) 
 
 
 def test_email_representation_is_consistent_for_index_and_detail(client: TestClient) -> None:
-    template = Template.create(
-        text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
-    )
+    template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email(1, template=template)
     email.body_html = "<p>Order #42 confirmed for $7.20</p>"
     email.save()
@@ -212,7 +210,120 @@ def test_email_representation_is_consistent_for_index_and_detail(client: TestCli
 
     assert index_item["representation"] == expected
     assert detail.status_code == 200
-    assert detail.json()["representation"] == expected
+    assert detail.json()["representation"] == {
+        **expected,
+        "resolved_fields": dict.fromkeys(TRANSACTION_FIELD_NAMES),
+    }
+
+
+def test_fixed_transaction_fields_are_seeded(client: TestClient) -> None:
+    del client
+    seeded_names = [field.name for field in Field.select()]
+    assert len(seeded_names) == len(TRANSACTION_FIELD_NAMES)
+    assert set(seeded_names) == set(TRANSACTION_FIELD_NAMES)
+
+
+def test_field_parser_snapshot_and_atomic_replacement(client: TestClient) -> None:
+    template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
+    email = _email(1, template=template)
+    email.body_html = "<p>Order #42 confirmed for $7.20</p>"
+    email.save()
+
+    replacement = {
+        "amount": {"rule": "extracted", "parameter_indices": [1, 2]},
+        "currency_code": {"rule": "extracted", "parameter_indices": [1]},
+        "description": {"rule": "constant", "constant_value": "confirmed"},
+        "account_hint": {"rule": "missing"},
+        "is_credit": {"rule": "extracted", "parameter_indices": [0]},
+    }
+    response = client.put(f"/templates/{template.id}/field-parsers", json=replacement)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["template_id"] == template.id
+    assert payload["text"] == template.text
+    assert payload["example_email_id"] == email.id
+    assert payload["parameters"] == [
+        {"index": 0, "mask_name": "NUMBER", "value": "42"},
+        {"index": 1, "mask_name": "CURRENCY_CODE", "value": "$"},
+        {"index": 2, "mask_name": "NUMBER", "value": "7.20"},
+    ]
+    assert payload["parsers"] == {**dict.fromkeys(TRANSACTION_FIELD_NAMES), **replacement}
+    assert payload["preview"] == {
+        "amount": "$ 7.20",
+        "currency_code": "$",
+        "payee": None,
+        "description": "confirmed",
+        "transaction_date": None,
+        "account_hint": None,
+        "is_credit": "42",
+    }
+
+    invalid = client.put(
+        f"/templates/{template.id}/field-parsers",
+        json={"amount": {"rule": "extracted", "parameter_indices": [3]}},
+    )
+    assert invalid.status_code == 422
+    assert client.get(f"/templates/{template.id}/field-parsers").json()["parsers"] == {
+        **dict.fromkeys(TRANSACTION_FIELD_NAMES),
+        **replacement,
+    }
+
+    cleared = client.put(f"/templates/{template.id}/field-parsers", json={})
+    assert cleared.status_code == 200
+    assert cleared.json()["parsers"] == dict.fromkeys(TRANSACTION_FIELD_NAMES)
+    assert FieldParser.select().where(FieldParser.template == template).count() == 0
+
+
+def test_field_parser_snapshot_without_example_and_request_validation(client: TestClient) -> None:
+    template = Template.create(text="Paid <CURRENCY_CODE><NUMBER> on <DATE>")
+
+    response = client.get(f"/templates/{template.id}/field-parsers")
+
+    assert response.status_code == 200
+    assert response.json()["parameters"] == [
+        {"index": 0, "mask_name": "CURRENCY_CODE", "value": None},
+        {"index": 1, "mask_name": "NUMBER", "value": None},
+        {"index": 2, "mask_name": "DATE", "value": None},
+    ]
+    assert response.json()["preview"] is None
+    assert client.get("/templates/999/field-parsers").status_code == 404
+    assert client.put("/templates/999/field-parsers", json={}).status_code == 404
+
+    malformed_payloads: list[dict[str, object]] = [
+        {"unknown": {"rule": "missing"}},
+        {"amount": {"rule": "missing", "constant_value": "extra"}},
+        {"amount": {"rule": "constant"}},
+        {"amount": {"rule": "extracted", "parameter_indices": []}},
+        {"amount": {"rule": "extracted", "parameter_indices": [0, 0]}},
+        {"amount": {"rule": "extracted", "parameter_indices": [-1]}},
+        {"amount": {"rule": "extracted", "parameter_indices": [True]}},
+    ]
+    for payload in malformed_payloads:
+        assert (
+            client.put(f"/templates/{template.id}/field-parsers", json=payload).status_code == 422
+        )
+
+
+def test_resolved_fields_are_detail_only(client: TestClient) -> None:
+    template = Template.create(text="Paid <NUMBER>")
+    email = _email(1, template=template)
+    email.body_html = "<p>Paid 19</p>"
+    email.save()
+    response = client.put(
+        f"/templates/{template.id}/field-parsers",
+        json={"amount": {"rule": "extracted", "parameter_indices": [0]}},
+    )
+    assert response.status_code == 200
+
+    list_representation = client.get("/emails").json()["items"][0]["representation"]
+    detail_representation = client.get(f"/emails/{email.id}").json()["representation"]
+
+    assert "resolved_fields" not in list_representation
+    assert detail_representation["resolved_fields"] == {
+        **dict.fromkeys(TRANSACTION_FIELD_NAMES),
+        "amount": "19",
+    }
 
 
 def test_actions_validate_delegate_and_map_gmail_errors(

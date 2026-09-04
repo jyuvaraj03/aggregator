@@ -245,9 +245,7 @@ def _email(message_id: str, body_html: str, *, template: Template | None = None)
 
 
 def test_email_representation_returns_template_and_ordered_parameters() -> None:
-    template = Template.create(
-        text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
-    )
+    template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email("order", "<p>Order #42 confirmed for $7.20</p>", template=template)
 
     representation = email.representation()
@@ -255,8 +253,7 @@ def test_email_representation_returns_template_and_ordered_parameters() -> None:
     assert representation is not None
     assert representation.template_text == template.text
     parameters = [
-        (parameter.value, parameter.mask_name)
-        for parameter in representation.extracted_parameters
+        (parameter.value, parameter.mask_name) for parameter in representation.extracted_parameters
     ]
     assert parameters == [
         ("42", "NUMBER"),
@@ -266,13 +263,11 @@ def test_email_representation_returns_template_and_ordered_parameters() -> None:
 
 
 def test_email_representation_resolves_extracted_constant_and_missing_fields() -> None:
-    template = Template.create(
-        text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>"
-    )
+    template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email("order", "<p>Order #42 confirmed for $7.20</p>", template=template)
-    amount = Field.create(name="amount")
-    status = Field.create(name="status")
-    merchant = Field.create(name="merchant")
+    amount = Field.get(Field.name == "amount")
+    description = Field.get(Field.name == "description")
+    payee = Field.get(Field.name == "payee")
     FieldParser.create(
         template=template,
         field=amount,
@@ -281,19 +276,23 @@ def test_email_representation_resolves_extracted_constant_and_missing_fields() -
     )
     FieldParser.create(
         template=template,
-        field=status,
+        field=description,
         rule=FieldParserRule.CONSTANT,
         constant_value="confirmed",
     )
-    FieldParser.create(template=template, field=merchant, rule=FieldParserRule.MISSING)
+    FieldParser.create(template=template, field=payee, rule=FieldParserRule.MISSING)
 
     representation = email.representation()
 
     assert representation is not None
     assert representation.resolved_fields == {
         "amount": "$ 7.20",
-        "status": "confirmed",
-        "merchant": None,
+        "currency_code": None,
+        "payee": None,
+        "description": "confirmed",
+        "transaction_date": None,
+        "account_hint": None,
+        "is_credit": None,
     }
 
 
@@ -304,7 +303,15 @@ def test_email_representation_has_no_resolved_fields_without_parsers() -> None:
     representation = email.representation()
 
     assert representation is not None
-    assert representation.resolved_fields == {}
+    assert representation.resolved_fields == {
+        "amount": None,
+        "currency_code": None,
+        "payee": None,
+        "description": None,
+        "transaction_date": None,
+        "account_hint": None,
+        "is_credit": None,
+    }
 
 
 @pytest.mark.parametrize(

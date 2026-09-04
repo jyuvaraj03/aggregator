@@ -1,0 +1,35 @@
+meta {
+  name: Replace Field Parsers
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{baseUrl}}/templates/1/field-parsers
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "amount": {
+      "rule": "extracted",
+      "parameter_indices": [1, 2]
+    },
+    "currency_code": {
+      "rule": "extracted",
+      "parameter_indices": [1]
+    },
+    "description": {
+      "rule": "constant",
+      "constant_value": "Card transaction"
+    },
+    "account_hint": {
+      "rule": "missing"
+    },
+    "is_credit": {
+      "rule": "extracted",
+      "parameter_indices": [0]
+    }
+  }
+}

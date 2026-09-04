@@ -55,6 +55,11 @@ def template_parameter_count(template_text: str) -> int:
     return len(TEMPLATE_PARAMETER_PATTERN.findall(template_text))
 
 
+def template_parameter_masks(template_text: str) -> list[str]:
+    """Return parameter mask names in their template order."""
+    return [match.group()[1:-1] for match in TEMPLATE_PARAMETER_PATTERN.finditer(template_text)]
+
+
 @dataclass(frozen=True, slots=True)
 class MiningRecord:
     """A single piece of text supplied to the in-memory miner."""

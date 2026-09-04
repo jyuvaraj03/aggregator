@@ -56,6 +56,21 @@ class FieldParserRule(StrEnum):
     MISSING = "missing"
 
 
+class TransactionFieldName(StrEnum):
+    """The fixed transaction fields exposed by the parser configuration API."""
+
+    AMOUNT = "amount"
+    CURRENCY_CODE = "currency_code"
+    PAYEE = "payee"
+    DESCRIPTION = "description"
+    TRANSACTION_DATE = "transaction_date"
+    ACCOUNT_HINT = "account_hint"
+    IS_CREDIT = "is_credit"
+
+
+TRANSACTION_FIELD_NAMES = tuple(field.value for field in TransactionFieldName)
+
+
 class Template(Model):
     """A Drain3 pattern extracted from one or more email bodies."""
 

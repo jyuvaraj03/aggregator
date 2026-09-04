@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 from drain3.template_miner import ExtractedParameter
 
-from aggregator.models import Field, FieldParser, FieldParserRule
+from aggregator.models import TRANSACTION_FIELD_NAMES, Field, FieldParser, FieldParserRule
 from aggregator.template_mining import MiningRecord, get_extracted_parameters
 
 if TYPE_CHECKING:
@@ -23,9 +23,11 @@ class TemplateRepresentation:
     @property
     def resolved_fields(self) -> dict[str, str | None]:
         """Resolve this template's configured fields for the represented email."""
-        resolved: dict[str, str | None] = {}
+        resolved: dict[str, str | None] = dict.fromkeys(TRANSACTION_FIELD_NAMES)
         for parser in self.field_parsers:
             parser.validate()
+            if parser.field.name not in TRANSACTION_FIELD_NAMES:
+                continue
             rule = FieldParserRule(parser.rule)
             if rule is FieldParserRule.EXTRACTED:
                 resolved[parser.field.name] = " ".join(
@@ -45,7 +47,7 @@ def represent_email_template(email: Email) -> TemplateRepresentation:
     if template is None:
         raise ValueError("Cannot represent an email without a template")
 
-    mining_record = MiningRecord(email.id, email.readable_body())
+    mining_record = MiningRecord(email.id, email.readable_body() or (email.body_text or ""))
     template_text = template.text
     parameters = get_extracted_parameters(mining_record, template_text)
 

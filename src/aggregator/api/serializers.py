@@ -8,9 +8,11 @@ from __future__ import annotations
 from ..models import Email, Template
 from .schemas import (
     EmailDetail,
+    EmailDetailRepresentationResponse,
     EmailRepresentationResponse,
     EmailSummary,
     ExtractedParameterResponse,
+    ResolvedTransactionFields,
     TemplateEmailExample,
     TemplateResponse,
 )
@@ -40,9 +42,32 @@ def email_summary(email: Email) -> EmailSummary:
 
 
 def email_detail(email: Email) -> EmailDetail:
-    summary = email_summary(email)
     body = email.readable_body() or (email.body_text or "")
-    return EmailDetail(**summary.model_dump(), body=body)
+    representation = email.representation()
+    detail_representation = (
+        EmailDetailRepresentationResponse(
+            template_text=representation.template_text,
+            extracted_parameters=[
+                ExtractedParameterResponse(value=parameter.value, mask_name=parameter.mask_name)
+                for parameter in representation.extracted_parameters
+            ],
+            resolved_fields=ResolvedTransactionFields.model_validate(
+                representation.resolved_fields
+            ),
+        )
+        if representation is not None
+        else None
+    )
+    return EmailDetail(
+        id=email.id,
+        message_id=email.message_id,
+        received_at=email.received_at,
+        sender=email.sender,
+        subject=email.subject,
+        template_id=email.template_id,
+        body=body,
+        representation=detail_representation,
+    )
 
 
 def template_email_example(email: Email) -> TemplateEmailExample:

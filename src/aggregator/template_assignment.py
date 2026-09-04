@@ -24,9 +24,7 @@ def assign_email_templates() -> TemplateAssignmentResult:
     """Assign mined templates to emails that do not yet have one."""
     with database_connection():
         emails = list(
-            Email.select()
-            .where(Email.template.is_null())
-            .order_by(Email.received_at, Email.id)
+            Email.select().where(Email.template.is_null()).order_by(Email.received_at, Email.id)
         )
         result = bulk_mine_templates(
             MiningRecord(record_id=email.id, text=email.readable_body()) for email in emails
