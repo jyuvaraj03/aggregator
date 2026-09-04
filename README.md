@@ -25,6 +25,23 @@ uv run aggregator cli
 uv run python -m aggregator cli
 ```
 
+## Parser-generation connectivity smoke test
+
+Copy `.env.example` to `.env` and set `OPENAI_API_KEY` in `.env`. Then run the
+minimal LangGraph workflow:
+
+```bash
+uv run python -m aggregator.parser_generation
+```
+
+The package also exposes the workflow as a Python function:
+
+```python
+from aggregator.parser_generation import say_hello
+
+greeting = say_hello()
+```
+
 ## Gmail credentials
 
 `aggregator.email_pull.pull_messages()` reads the authenticated user's mailbox
