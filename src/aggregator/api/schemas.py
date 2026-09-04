@@ -91,10 +91,12 @@ class ExtractedParameterResponse(BaseModel):
 
 class EmailRepresentationResponse(BaseModel):
     template_text: str
+    resolved_fields: ResolvedTransactionFields
+
+
+class EmailDetailRepresentationResponse(BaseModel):
+    template_text: str
     extracted_parameters: list[ExtractedParameterResponse]
-
-
-class EmailDetailRepresentationResponse(EmailRepresentationResponse):
     resolved_fields: ResolvedTransactionFields
 
 

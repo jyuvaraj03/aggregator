@@ -30,10 +30,9 @@ def email_summary(email: Email) -> EmailSummary:
         representation=(
             EmailRepresentationResponse(
                 template_text=representation.template_text,
-                extracted_parameters=[
-                    ExtractedParameterResponse(value=parameter.value, mask_name=parameter.mask_name)
-                    for parameter in representation.extracted_parameters
-                ],
+                resolved_fields=ResolvedTransactionFields.model_validate(
+                    representation.resolved_fields
+                ),
             )
             if representation is not None
             else None

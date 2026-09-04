@@ -107,7 +107,7 @@ def test_email_template_filtering(client: TestClient) -> None:
                 "template_id": first.id,
                 "representation": {
                     "template_text": "first",
-                    "extracted_parameters": [],
+                    "resolved_fields": dict.fromkeys(TRANSACTION_FIELD_NAMES),
                 },
             },
             {
@@ -119,7 +119,7 @@ def test_email_template_filtering(client: TestClient) -> None:
                 "template_id": first.id,
                 "representation": {
                     "template_text": "first",
-                    "extracted_parameters": [],
+                    "resolved_fields": dict.fromkeys(TRANSACTION_FIELD_NAMES),
                 },
             },
         ],
@@ -190,13 +190,13 @@ def test_template_detail_includes_earliest_email_as_example(client: TestClient) 
     assert client.get(f"/templates/{empty_template.id}").json()["example"] is None
 
 
-def test_email_representation_is_consistent_for_index_and_detail(client: TestClient) -> None:
+def test_email_representation_shapes_for_index_and_detail(client: TestClient) -> None:
     template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email(1, template=template)
     email.body_html = "<p>Order #42 confirmed for $7.20</p>"
     email.save()
 
-    expected = {
+    detail_expected = {
         "template_text": "Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>",
         "extracted_parameters": [
             {"value": "42", "mask_name": "NUMBER"},
@@ -208,10 +208,13 @@ def test_email_representation_is_consistent_for_index_and_detail(client: TestCli
     index_item = client.get("/emails").json()["items"][0]
     detail = client.get(f"/emails/{email.id}")
 
-    assert index_item["representation"] == expected
     assert detail.status_code == 200
+    assert index_item["representation"] == {
+        "template_text": detail_expected["template_text"],
+        "resolved_fields": dict.fromkeys(TRANSACTION_FIELD_NAMES),
+    }
     assert detail.json()["representation"] == {
-        **expected,
+        **detail_expected,
         "resolved_fields": dict.fromkeys(TRANSACTION_FIELD_NAMES),
     }
 
@@ -307,25 +310,31 @@ def test_field_parser_snapshot_without_example_and_request_validation(client: Te
         )
 
 
-def test_resolved_fields_are_detail_only(client: TestClient) -> None:
+def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient) -> None:
     template = Template.create(text="Paid <NUMBER>")
     email = _email(1, template=template)
     email.body_html = "<p>Paid 19</p>"
     email.save()
     response = client.put(
         f"/templates/{template.id}/field-parsers",
-        json={"amount": {"rule": "extracted", "parameter_indices": [0]}},
+        json={
+            "amount": {"rule": "extracted", "parameter_indices": [0]},
+            "payee": {"rule": "constant", "constant_value": "Example Shop"},
+        },
     )
     assert response.status_code == 200
 
     list_representation = client.get("/emails").json()["items"][0]["representation"]
     detail_representation = client.get(f"/emails/{email.id}").json()["representation"]
 
-    assert "resolved_fields" not in list_representation
-    assert detail_representation["resolved_fields"] == {
+    expected = {
         **dict.fromkeys(TRANSACTION_FIELD_NAMES),
         "amount": "19",
+        "payee": "Example Shop",
     }
+    assert "extracted_parameters" not in list_representation
+    assert list_representation["resolved_fields"] == expected
+    assert detail_representation["resolved_fields"] == expected
 
 
 def test_actions_validate_delegate_and_map_gmail_errors(
