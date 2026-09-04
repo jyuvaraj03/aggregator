@@ -18,11 +18,10 @@ from .api.schemas import (
 )
 from .database import database
 from .models import (
-    TRANSACTION_FIELD_NAMES,
-    Field,
     FieldParser,
     FieldParserRule,
     Template,
+    TransactionFieldName,
 )
 from .template_mining import template_parameter_masks
 
@@ -41,15 +40,9 @@ def _parser_configuration(parser: FieldParser) -> FieldParserConfiguration:
 
 def _configured_parsers(template: Template) -> FieldParserSet:
     values: dict[str, FieldParserConfiguration] = {}
-    query = (
-        FieldParser.select(FieldParser, Field)
-        .join(Field)
-        .where(FieldParser.template == template)
-        .order_by(FieldParser.id)
-    )
+    query = FieldParser.select().where(FieldParser.template == template).order_by(FieldParser.id)
     for parser in query:
-        if parser.field.name in TRANSACTION_FIELD_NAMES:
-            values[parser.field.name] = _parser_configuration(parser)
+        values[parser.field_name] = _parser_configuration(parser)
     return FieldParserSet.model_validate(values)
 
 
@@ -83,21 +76,15 @@ def field_parser_snapshot(template: Template) -> TemplateFieldParsersResponse:
 
 def replace_field_parsers(template: Template, parser_set: FieldParserSet) -> None:
     """Validate and atomically replace every configured parser for a template."""
-    fields = {
-        field.name: field for field in Field.select().where(Field.name.in_(TRANSACTION_FIELD_NAMES))
-    }
-    if set(fields) != set(TRANSACTION_FIELD_NAMES):
-        raise RuntimeError("The fixed transaction field catalog has not been seeded")
-
     replacements: list[FieldParser] = []
-    for name in TRANSACTION_FIELD_NAMES:
-        configuration = getattr(parser_set, name)
+    for field_name in TransactionFieldName:
+        configuration = getattr(parser_set, field_name.value)
         if configuration is None:
             continue
         if isinstance(configuration, ExtractedFieldParser):
             parser = FieldParser(
                 template=template,
-                field=fields[name],
+                field_name=field_name,
                 rule=FieldParserRule.EXTRACTED.value,
                 parameter_indices=configuration.parameter_indices,
                 constant_value=None,
@@ -105,7 +92,7 @@ def replace_field_parsers(template: Template, parser_set: FieldParserSet) -> Non
         elif isinstance(configuration, ConstantFieldParser):
             parser = FieldParser(
                 template=template,
-                field=fields[name],
+                field_name=field_name,
                 rule=FieldParserRule.CONSTANT.value,
                 parameter_indices=[],
                 constant_value=configuration.constant_value,
@@ -113,7 +100,7 @@ def replace_field_parsers(template: Template, parser_set: FieldParserSet) -> Non
         else:
             parser = FieldParser(
                 template=template,
-                field=fields[name],
+                field_name=field_name,
                 rule=FieldParserRule.MISSING.value,
                 parameter_indices=[],
                 constant_value=None,

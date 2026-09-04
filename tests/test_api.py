@@ -15,7 +15,7 @@ from aggregator.api.app import app
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
-from aggregator.models import TRANSACTION_FIELD_NAMES, Email, Field, FieldParser, Template
+from aggregator.models import TRANSACTION_FIELD_NAMES, Email, FieldParser, Template
 from aggregator.template_assignment import TemplateAssignmentResult
 
 
@@ -216,11 +216,11 @@ def test_email_representation_is_consistent_for_index_and_detail(client: TestCli
     }
 
 
-def test_fixed_transaction_fields_are_seeded(client: TestClient) -> None:
+def test_fixed_transaction_fields_require_no_catalog_table(client: TestClient) -> None:
     del client
-    seeded_names = [field.name for field in Field.select()]
-    assert len(seeded_names) == len(TRANSACTION_FIELD_NAMES)
-    assert set(seeded_names) == set(TRANSACTION_FIELD_NAMES)
+    table_names = database.get_tables()
+    assert "fields" not in table_names
+    assert "field_parsers" in table_names
 
 
 def test_field_parser_snapshot_and_atomic_replacement(client: TestClient) -> None:
@@ -232,7 +232,9 @@ def test_field_parser_snapshot_and_atomic_replacement(client: TestClient) -> Non
     replacement = {
         "amount": {"rule": "extracted", "parameter_indices": [1, 2]},
         "currency_code": {"rule": "extracted", "parameter_indices": [1]},
+        "payee": {"rule": "constant", "constant_value": "Example Shop"},
         "description": {"rule": "constant", "constant_value": "confirmed"},
+        "transaction_date": {"rule": "missing"},
         "account_hint": {"rule": "missing"},
         "is_credit": {"rule": "extracted", "parameter_indices": [0]},
     }
@@ -252,7 +254,7 @@ def test_field_parser_snapshot_and_atomic_replacement(client: TestClient) -> Non
     assert payload["preview"] == {
         "amount": "$ 7.20",
         "currency_code": "$",
-        "payee": None,
+        "payee": "Example Shop",
         "description": "confirmed",
         "transaction_date": None,
         "account_hint": None,

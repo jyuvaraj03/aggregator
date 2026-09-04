@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 from drain3.template_miner import ExtractedParameter
 
-from aggregator.models import TRANSACTION_FIELD_NAMES, Field, FieldParser, FieldParserRule
+from aggregator.models import TRANSACTION_FIELD_NAMES, FieldParser, FieldParserRule
 from aggregator.template_mining import MiningRecord, get_extracted_parameters
 
 if TYPE_CHECKING:
@@ -26,18 +26,16 @@ class TemplateRepresentation:
         resolved: dict[str, str | None] = dict.fromkeys(TRANSACTION_FIELD_NAMES)
         for parser in self.field_parsers:
             parser.validate()
-            if parser.field.name not in TRANSACTION_FIELD_NAMES:
-                continue
             rule = FieldParserRule(parser.rule)
             if rule is FieldParserRule.EXTRACTED:
-                resolved[parser.field.name] = " ".join(
+                resolved[parser.field_name] = " ".join(
                     self.extracted_parameters[index].value
                     for index in cast(list[int], parser.parameter_indices)
                 )
             elif rule is FieldParserRule.CONSTANT:
-                resolved[parser.field.name] = parser.constant_value
+                resolved[parser.field_name] = parser.constant_value
             else:
-                resolved[parser.field.name] = None
+                resolved[parser.field_name] = None
         return resolved
 
 
@@ -52,10 +50,7 @@ def represent_email_template(email: Email) -> TemplateRepresentation:
     parameters = get_extracted_parameters(mining_record, template_text)
 
     field_parsers = list(
-        FieldParser.select(FieldParser, Field)
-        .join(Field)
-        .where(FieldParser.template == template)
-        .order_by(FieldParser.id)
+        FieldParser.select().where(FieldParser.template == template).order_by(FieldParser.id)
     )
     return TemplateRepresentation(
         template_text=template_text,

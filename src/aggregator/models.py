@@ -85,27 +85,22 @@ class Template(Model):
         table_name = "templates"
 
 
-class Field(Model):
-    """A globally named value that can be parsed from one or more templates."""
-
-    name = CharField(unique=True)
-
-    class Meta:
-        database = database
-        table_name = "fields"
-
-
 class FieldParser(Model):
-    """One template-specific rule for resolving a global field."""
+    """One template-specific rule for resolving a fixed transaction field."""
 
     template = ForeignKeyField(Template, backref="field_parsers", on_delete="CASCADE")
-    field = ForeignKeyField(Field, backref="field_parsers", on_delete="CASCADE")
+    field_name = CharField()
     rule = CharField()
     parameter_indices = JSONIntegerListField(default=list)
     constant_value = TextField(null=True)
 
     def validate(self) -> None:
         """Reject rule payloads that cannot be resolved for this template."""
+        try:
+            TransactionFieldName(self.field_name)
+        except ValueError as error:
+            raise ValueError(f"Unsupported transaction field name: {self.field_name!r}") from error
+
         try:
             rule = FieldParserRule(self.rule)
         except ValueError as error:
@@ -148,7 +143,7 @@ class FieldParser(Model):
     class Meta:
         database = database
         table_name = "field_parsers"
-        indexes = ((("template", "field"), True),)
+        indexes = ((("template", "field_name"), True),)
 
 
 class Email(Model):

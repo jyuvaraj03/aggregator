@@ -16,7 +16,7 @@ from aggregator.database import (
     connect_database,
     database,
 )
-from aggregator.models import Email, Field, FieldParser, FieldParserRule, Template
+from aggregator.models import Email, FieldParser, FieldParserRule, Template, TransactionFieldName
 from aggregator.template_assignment import (
     TemplateAssignmentResult,
     assign_email_templates,
@@ -265,22 +265,23 @@ def test_email_representation_returns_template_and_ordered_parameters() -> None:
 def test_email_representation_resolves_extracted_constant_and_missing_fields() -> None:
     template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email("order", "<p>Order #42 confirmed for $7.20</p>", template=template)
-    amount = Field.get(Field.name == "amount")
-    description = Field.get(Field.name == "description")
-    payee = Field.get(Field.name == "payee")
     FieldParser.create(
         template=template,
-        field=amount,
+        field_name=TransactionFieldName.AMOUNT,
         rule=FieldParserRule.EXTRACTED,
         parameter_indices=[1, 2],
     )
     FieldParser.create(
         template=template,
-        field=description,
+        field_name=TransactionFieldName.DESCRIPTION,
         rule=FieldParserRule.CONSTANT,
         constant_value="confirmed",
     )
-    FieldParser.create(template=template, field=payee, rule=FieldParserRule.MISSING)
+    FieldParser.create(
+        template=template,
+        field_name=TransactionFieldName.PAYEE,
+        rule=FieldParserRule.MISSING,
+    )
 
     representation = email.representation()
 
@@ -333,48 +334,54 @@ def test_field_parser_rejects_invalid_rule_configuration(
     rule: FieldParserRule | str, indices: list[int], constant_value: str | None, message: str
 ) -> None:
     template = Template.create(text="Order #<NUMBER> confirmed")
-    field = Field.create(name="order_number")
 
     with pytest.raises(ValueError, match=message):
         FieldParser.create(
             template=template,
-            field=field,
+            field_name=TransactionFieldName.AMOUNT,
             rule=rule,
             parameter_indices=indices,
             constant_value=constant_value,
         )
 
 
-def test_field_and_parser_constraints_and_cascades() -> None:
+def test_field_parser_rejects_unknown_field_name() -> None:
     template = Template.create(text="Order #<NUMBER> confirmed")
-    field = Field.create(name="order_number")
+
+    with pytest.raises(ValueError, match="Unsupported transaction field name"):
+        FieldParser.create(
+            template=template,
+            field_name="order_number",
+            rule=FieldParserRule.MISSING,
+        )
+
+
+def test_field_parser_uniqueness_and_template_cascade() -> None:
+    template = Template.create(text="Order #<NUMBER> confirmed")
     FieldParser.create(
         template=template,
-        field=field,
+        field_name=TransactionFieldName.AMOUNT,
         rule=FieldParserRule.EXTRACTED,
         parameter_indices=[0],
     )
 
     with pytest.raises(IntegrityError):
-        Field.create(name="order_number")
-    with pytest.raises(IntegrityError):
         FieldParser.create(
             template=template,
-            field=field,
+            field_name=TransactionFieldName.AMOUNT,
             rule=FieldParserRule.MISSING,
         )
 
-    field.delete_instance()
+    template.delete_instance()
 
     assert FieldParser.select().count() == 0
 
 
 def test_representation_defensively_revalidates_stale_parser_indices() -> None:
     template = Template.create(text="Order #<NUMBER> confirmed")
-    field = Field.create(name="order_number")
     FieldParser.insert(
         template=template,
-        field=field,
+        field_name=TransactionFieldName.AMOUNT,
         rule=FieldParserRule.EXTRACTED,
         parameter_indices=[1],
         constant_value=None,
