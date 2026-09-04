@@ -4,7 +4,7 @@
 # pyright: reportAttributeAccessIssue=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from __future__ import annotations
 
-from typing import cast
+from typing import Literal, cast
 
 from .api.schemas import (
     ConstantFieldParser,
@@ -21,6 +21,7 @@ from .models import (
     FieldParser,
     FieldParserRule,
     Template,
+    TransactionExtractionStatus,
     TransactionFieldName,
 )
 from .template_mining import template_parameter_masks
@@ -64,6 +65,11 @@ def field_parser_snapshot(template: Template) -> TemplateFieldParsersResponse:
     return TemplateFieldParsersResponse(
         template_id=template.id,
         text=template.text,
+        transaction_extraction_status=cast(
+            Literal["pending", "succeeded", "failed"],
+            template.transaction_extraction_status,
+        ),
+        transaction_extraction_error=template.transaction_extraction_error,
         example_email_id=example.id if example is not None else None,
         parameters=[
             TemplateParameterResponse(index=index, mask_name=mask, value=values[index])
@@ -112,3 +118,8 @@ def replace_field_parsers(template: Template, parser_set: FieldParserSet) -> Non
         FieldParser.delete().where(FieldParser.template == template).execute()
         for parser in replacements:
             parser.save(force_insert=True)
+        template.transaction_extraction_status = TransactionExtractionStatus.PENDING.value
+        template.transaction_extraction_error = None
+        template.save(
+            only=[Template.transaction_extraction_status, Template.transaction_extraction_error]
+        )

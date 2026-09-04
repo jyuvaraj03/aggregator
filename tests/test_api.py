@@ -17,6 +17,7 @@ from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
 from aggregator.models import TRANSACTION_FIELD_NAMES, Email, FieldParser, Template
 from aggregator.template_assignment import TemplateAssignmentResult
+from aggregator.transaction_extraction import TransactionExtractionResult
 
 
 @pytest.fixture(autouse=True)
@@ -352,6 +353,17 @@ def test_actions_validate_delegate_and_map_gmail_errors(
         "assign_email_templates",
         lambda: TemplateAssignmentResult(processed=4, skipped=1, templates_created=1),
     )
+    monkeypatch.setattr(
+        actions,
+        "extract_transactions",
+        lambda: TransactionExtractionResult(
+            pending=8,
+            created=4,
+            skipped=1,
+            failed_templates=1,
+            failed_emails=3,
+        ),
+    )
 
     sync_response = client.post(
         "/email-sync", json={"label": "Receipts", "from_date": "2026-09-01"}
@@ -367,6 +379,13 @@ def test_actions_validate_delegate_and_map_gmail_errors(
         "processed": 4,
         "skipped": 1,
         "templates_created": 1,
+    }
+    assert client.post("/transaction-extraction").json() == {
+        "pending": 8,
+        "created": 4,
+        "skipped": 1,
+        "failed_templates": 1,
+        "failed_emails": 3,
     }
 
     def unavailable(_: str, __: object) -> SyncResult:

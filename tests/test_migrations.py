@@ -36,7 +36,7 @@ def test_field_catalog_migration_reverse_restores_seeded_legacy_tables(tmp_path:
     runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
     runner.up()
 
-    runner.down()
+    runner.down("0005_move_field_catalog_into_code")
 
     assert {"fields", "field_parsers"}.issubset(database.get_tables())
     assert [column.name for column in database.get_columns("field_parsers")] == [
@@ -52,3 +52,25 @@ def test_field_catalog_migration_reverse_restores_seeded_legacy_tables(tmp_path:
     }
     assert names == set(TRANSACTION_FIELD_NAMES)
     assert database.execute_sql("SELECT COUNT(*) FROM field_parsers").fetchone()[0] == 0
+
+
+def test_transaction_migration_adds_and_removes_transaction_storage(tmp_path: Path) -> None:
+    database = SqliteDatabase(str(tmp_path / "migration.sqlite3"), pragmas={"foreign_keys": 1})
+    runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
+    runner.up()
+
+    assert "transactions" in database.get_tables()
+    assert {
+        "transaction_extraction_status",
+        "transaction_extraction_error",
+    }.issubset(column.name for column in database.get_columns("templates"))
+    assert (
+        database.execute_sql("SELECT transaction_extraction_status FROM templates").fetchall() == []
+    )
+
+    runner.down()
+
+    assert "transactions" not in database.get_tables()
+    template_columns = {column.name for column in database.get_columns("templates")}
+    assert "transaction_extraction_status" not in template_columns
+    assert "transaction_extraction_error" not in template_columns

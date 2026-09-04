@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.128.0",
     "google-auth[requests]>=2.0",
     "peewee>=4.4.0",
+    "python-dateutil>=2.9.0",
     "uvicorn>=0.40.0",
 ]
 

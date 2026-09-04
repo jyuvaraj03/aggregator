@@ -5,11 +5,20 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, cast
 
 from bs4 import BeautifulSoup
-from peewee import CharField, DateTimeField, ForeignKeyField, Model, TextField
+from peewee import (
+    BooleanField,
+    CharField,
+    DateField,
+    DateTimeField,
+    ForeignKeyField,
+    Model,
+    TextField,
+)
 
 from .database import database
 from .template_mining import template_parameter_count
@@ -50,6 +59,22 @@ class JSONIntegerListField(TextField):
         raise ValueError("Expected a JSON list of integers")
 
 
+class DecimalTextField(TextField):
+    """Persist decimal values losslessly while exposing ``Decimal`` in Python."""
+
+    def db_value(self, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, Decimal):
+            raise TypeError("Expected a Decimal value")
+        return str(value)
+
+    def python_value(self, value: object) -> Decimal | None:
+        if value is None:
+            return None
+        return Decimal(str(value))
+
+
 class FieldParserRule(StrEnum):
     EXTRACTED = "extracted"
     CONSTANT = "constant"
@@ -71,10 +96,18 @@ class TransactionFieldName(StrEnum):
 TRANSACTION_FIELD_NAMES = tuple(field.value for field in TransactionFieldName)
 
 
+class TransactionExtractionStatus(StrEnum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class Template(Model):
     """A Drain3 pattern extracted from one or more email bodies."""
 
     text = TextField()
+    transaction_extraction_status = CharField(default=TransactionExtractionStatus.PENDING.value)
+    transaction_extraction_error = TextField(null=True)
 
     def example_email(self) -> Email | None:
         """Return the earliest email assigned to this template, if any."""
@@ -178,3 +211,20 @@ class Email(Model):
     class Meta:
         database = database
         table_name = "emails"
+
+
+class Transaction(Model):
+    """Typed transaction fields extracted from one email."""
+
+    email = ForeignKeyField(Email, backref="transaction", unique=True, on_delete="CASCADE")
+    amount = DecimalTextField(null=True)
+    currency_code = TextField(null=True)
+    payee = TextField(null=True)
+    description = TextField(null=True)
+    transaction_date = DateField(null=True)
+    account_hint = TextField(null=True)
+    is_credit = BooleanField(null=True)
+
+    class Meta:
+        database = database
+        table_name = "transactions"

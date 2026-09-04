@@ -78,6 +78,8 @@ class TemplateParameterResponse(BaseModel):
 class TemplateFieldParsersResponse(BaseModel):
     template_id: int
     text: str
+    transaction_extraction_status: Literal["pending", "succeeded", "failed"]
+    transaction_extraction_error: str | None
     example_email_id: int | None
     parameters: list[TemplateParameterResponse]
     parsers: FieldParserSet
@@ -172,3 +174,11 @@ class TemplateAssignmentResponse(BaseModel):
     processed: int
     skipped: int
     templates_created: int
+
+
+class TransactionExtractionResponse(BaseModel):
+    pending: int
+    created: int
+    skipped: int
+    failed_templates: int
+    failed_emails: int

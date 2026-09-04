@@ -6,7 +6,13 @@ from fastapi import APIRouter
 
 from ..email_sync import sync_messages
 from ..template_assignment import assign_email_templates
-from .schemas import EmailSyncRequest, SyncResponse, TemplateAssignmentResponse
+from ..transaction_extraction import extract_transactions
+from .schemas import (
+    EmailSyncRequest,
+    SyncResponse,
+    TemplateAssignmentResponse,
+    TransactionExtractionResponse,
+)
 
 router = APIRouter(tags=["actions"])
 
@@ -28,4 +34,16 @@ def assign_email_templates_action() -> TemplateAssignmentResponse:
         processed=result.processed,
         skipped=result.skipped,
         templates_created=result.templates_created,
+    )
+
+
+@router.post("/transaction-extraction", response_model=TransactionExtractionResponse)
+def extract_transactions_action() -> TransactionExtractionResponse:
+    result = extract_transactions()
+    return TransactionExtractionResponse(
+        pending=result.pending,
+        created=result.created,
+        skipped=result.skipped,
+        failed_templates=result.failed_templates,
+        failed_emails=result.failed_emails,
     )
