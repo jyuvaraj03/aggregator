@@ -70,7 +70,7 @@ class FieldParserSet(BaseModel):
     is_credit: FieldParserConfiguration | None = None
 
 
-class TemplateParameterResponse(BaseModel):
+class IndexedParameterResponse(BaseModel):
     index: int
     mask_name: str
     value: str | None
@@ -82,14 +82,9 @@ class TemplateFieldParsersResponse(BaseModel):
     transaction_extraction_status: Literal["pending", "succeeded", "failed"]
     transaction_extraction_error: str | None
     example_email_id: int | None
-    parameters: list[TemplateParameterResponse]
+    parameters: list[IndexedParameterResponse]
     parsers: FieldParserSet
     preview: ResolvedTransactionFields | None
-
-
-class ExtractedParameterResponse(BaseModel):
-    value: str
-    mask_name: str
 
 
 class EmailRepresentationResponse(BaseModel):
@@ -99,7 +94,7 @@ class EmailRepresentationResponse(BaseModel):
 
 class EmailDetailRepresentationResponse(BaseModel):
     template_text: str
-    extracted_parameters: list[ExtractedParameterResponse]
+    extracted_parameters: list[IndexedParameterResponse]
     resolved_fields: ResolvedTransactionFields
 
 

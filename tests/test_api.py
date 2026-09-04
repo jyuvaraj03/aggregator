@@ -13,6 +13,7 @@ from playhouse.migrations import Runner
 
 from aggregator.api import actions
 from aggregator.api.app import app
+from aggregator.api.parameter_serialization import indexed_parameter_responses
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
@@ -37,6 +38,17 @@ def file_database(tmp_path: Path) -> Generator[None]:
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
+
+
+def test_indexed_parameter_responses() -> None:
+    assert indexed_parameter_responses([]) == []
+    assert [
+        parameter.model_dump()
+        for parameter in indexed_parameter_responses([("NUMBER", "42"), ("CURRENCY_CODE", None)])
+    ] == [
+        {"index": 0, "mask_name": "NUMBER", "value": "42"},
+        {"index": 1, "mask_name": "CURRENCY_CODE", "value": None},
+    ]
 
 
 def _email(index: int, *, template: Template | None = None) -> Email:
@@ -201,9 +213,9 @@ def test_email_representation_shapes_for_index_and_detail(client: TestClient) ->
     detail_expected = {
         "template_text": "Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>",
         "extracted_parameters": [
-            {"value": "42", "mask_name": "NUMBER"},
-            {"value": "$", "mask_name": "CURRENCY_CODE"},
-            {"value": "7.20", "mask_name": "NUMBER"},
+            {"index": 0, "value": "42", "mask_name": "NUMBER"},
+            {"index": 1, "value": "$", "mask_name": "CURRENCY_CODE"},
+            {"index": 2, "value": "7.20", "mask_name": "NUMBER"},
         ],
     }
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Literal, cast
 
+from .api.parameter_serialization import indexed_parameter_responses
 from .api.schemas import (
     ConstantFieldParser,
     ExtractedFieldParser,
@@ -14,7 +15,6 @@ from .api.schemas import (
     MissingFieldParser,
     ResolvedTransactionFields,
     TemplateFieldParsersResponse,
-    TemplateParameterResponse,
 )
 from .database import database
 from .models import (
@@ -71,10 +71,7 @@ def field_parser_snapshot(template: Template) -> TemplateFieldParsersResponse:
         ),
         transaction_extraction_error=template.transaction_extraction_error,
         example_email_id=example.id if example is not None else None,
-        parameters=[
-            TemplateParameterResponse(index=index, mask_name=mask, value=values[index])
-            for index, mask in enumerate(masks)
-        ],
+        parameters=indexed_parameter_responses(zip(masks, values, strict=True)),
         parsers=_configured_parsers(template),
         preview=preview,
     )

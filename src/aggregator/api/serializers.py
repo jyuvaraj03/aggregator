@@ -9,12 +9,12 @@ from decimal import Decimal
 from typing import cast
 
 from ..models import Email, Template, Transaction
+from .parameter_serialization import indexed_parameter_responses
 from .schemas import (
     EmailDetail,
     EmailDetailRepresentationResponse,
     EmailRepresentationResponse,
     EmailSummary,
-    ExtractedParameterResponse,
     ResolvedTransactionFields,
     TemplateEmailExample,
     TemplateResponse,
@@ -50,10 +50,10 @@ def email_detail(email: Email) -> EmailDetail:
     detail_representation = (
         EmailDetailRepresentationResponse(
             template_text=representation.template_text,
-            extracted_parameters=[
-                ExtractedParameterResponse(value=parameter.value, mask_name=parameter.mask_name)
+            extracted_parameters=indexed_parameter_responses(
+                (parameter.mask_name, parameter.value)
                 for parameter in representation.extracted_parameters
-            ],
+            ),
             resolved_fields=ResolvedTransactionFields.model_validate(
                 representation.resolved_fields
             ),
