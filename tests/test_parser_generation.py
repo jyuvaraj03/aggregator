@@ -129,6 +129,33 @@ def test_generation_uses_pydantic_json_schema(
     assert payload == {"template_text": TEMPLATE, "parameter_examples": [EXAMPLE]}
 
 
+def test_generation_attaches_and_flushes_opt_in_langfuse_tracing(
+    monkeypatch: pytest.MonkeyPatch, parser_data: dict[str, object]
+) -> None:
+    handler = Mock()
+    langfuse = Mock()
+    graph = Mock()
+    graph.invoke.return_value = {"parsers": FieldParserSet.model_validate(parser_data)}
+    monkeypatch.setattr(_workflow, "load_dotenv", Mock())
+    monkeypatch.setattr(_workflow, "_build_graph", Mock(return_value=graph))
+    monkeypatch.setattr(
+        _workflow,
+        "_langfuse_tracing",
+        Mock(return_value=(handler, langfuse)),
+    )
+
+    result = parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE)
+
+    assert result.model_dump() == parser_data
+    graph.invoke.assert_called_once()
+    _, kwargs = graph.invoke.call_args
+    assert kwargs["config"] == {
+        "callbacks": [handler],
+        "run_name": "generate-field-parsers",
+    }
+    langfuse.flush.assert_called_once()
+
+
 def test_multiple_examples_and_explicit_indices(endpoint: ModelEndpoint) -> None:
     second = [dict(parameter) for parameter in EXAMPLE]
     second[1]["value"] = "100.00"
