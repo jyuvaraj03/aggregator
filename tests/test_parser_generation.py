@@ -9,9 +9,11 @@ from typing import cast
 from unittest.mock import Mock
 
 import httpx
+import langchain_mistralai
 import langchain_openai
 import pytest
 from _pytest.capture import CaptureFixture
+from langchain_core.exceptions import OutputParserException
 from pydantic import SecretStr
 
 from aggregator import parser_generation
@@ -36,6 +38,7 @@ def test_import_does_not_construct_chat_model(monkeypatch: pytest.MonkeyPatch) -
     constructor = Mock(side_effect=AssertionError("Model constructed during import"))
     with monkeypatch.context() as context:
         context.setattr(langchain_openai, "ChatOpenAI", constructor)
+        context.setattr(langchain_mistralai, "ChatMistralAI", constructor)
         importlib.reload(_workflow)
         importlib.reload(parser_generation)
         assert parser_generation.generate_field_parsers is _workflow.generate_field_parsers
@@ -67,6 +70,7 @@ class ModelEndpoint:
 @pytest.fixture
 def endpoint(monkeypatch: pytest.MonkeyPatch, parser_data: dict[str, object]) -> ModelEndpoint:
     """Exercise real LangChain/Pydantic parsing with an in-memory HTTP endpoint."""
+    monkeypatch.setenv("PARSER_GENERATION_PROVIDER", "ollama")
     reply = Mock(return_value=json.dumps(parser_data))
     requests: list[dict[str, object]] = []
 
@@ -127,6 +131,76 @@ def test_generation_uses_pydantic_json_schema(
     messages = cast(list[dict[str, str]], request["messages"])
     payload = json.loads(messages[0]["content"].split("Input JSON:\n", 1)[1])
     assert payload == {"template_text": TEMPLATE, "parameter_examples": [EXAMPLE]}
+
+
+def test_ollama_is_the_default_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PARSER_GENERATION_PROVIDER", raising=False)
+    assert _workflow._model_provider() == "ollama"  # pyright: ignore[reportPrivateUsage]
+
+
+def test_mistral_provider_uses_api_key_and_retries_with_same_model(
+    monkeypatch: pytest.MonkeyPatch, parser_data: dict[str, object]
+) -> None:
+    structured_model = Mock()
+    structured_model.invoke.side_effect = [
+        OutputParserException("invalid output"),
+        _workflow.GeneratedFieldParsers.model_validate(parser_data),
+    ]
+    model = Mock()
+    model.with_structured_output.return_value = structured_model
+    constructor = Mock(return_value=model)
+    handler = Mock()
+    langfuse = Mock()
+    monkeypatch.setenv("PARSER_GENERATION_PROVIDER", "mistral")
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    monkeypatch.setattr(_workflow, "load_dotenv", Mock())
+    monkeypatch.setattr(_workflow, "ChatMistralAI", constructor)
+    monkeypatch.setattr(_workflow, "_langfuse_tracing", Mock(return_value=(handler, langfuse)))
+
+    result = parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE)
+
+    assert result.model_dump() == parser_data
+    constructor.assert_called_once_with(model_name="mistral-large-latest")
+    model.with_structured_output.assert_called_once_with(
+        _workflow.GeneratedFieldParsers, method="json_schema"
+    )
+    assert structured_model.invoke.call_count == 2
+    langfuse.flush.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("provider", "api_key", "message"),
+    [
+        ("unknown", "test-key", "PARSER_GENERATION_PROVIDER"),
+        ("mistral", None, "MISTRAL_API_KEY"),
+        ("mistral", "   ", "MISTRAL_API_KEY"),
+    ],
+)
+def test_invalid_provider_configuration_fails_before_model_construction(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    api_key: str | None,
+    message: str,
+) -> None:
+    ollama_constructor = Mock()
+    mistral_constructor = Mock()
+    monkeypatch.setenv("PARSER_GENERATION_PROVIDER", provider)
+    if api_key is None:
+        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("MISTRAL_API_KEY", api_key)
+    monkeypatch.setattr(_workflow, "load_dotenv", Mock())
+    monkeypatch.setattr(_workflow, "ChatOpenAI", ollama_constructor)
+    monkeypatch.setattr(_workflow, "ChatMistralAI", mistral_constructor)
+    tracing = Mock()
+    monkeypatch.setattr(_workflow, "_langfuse_tracing", tracing)
+
+    with pytest.raises(ValueError, match=message):
+        parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE)
+
+    ollama_constructor.assert_not_called()
+    mistral_constructor.assert_not_called()
+    tracing.assert_not_called()
 
 
 def test_generation_attaches_and_flushes_opt_in_langfuse_tracing(

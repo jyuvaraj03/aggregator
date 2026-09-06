@@ -27,11 +27,23 @@ uv run python -m aggregator cli
 
 ## Generate field parsers
 
-Run Ollama locally with `deepseek-r1` installed (`ollama pull deepseek-r1`). The
-workflow always uses this model at `http://localhost:11434/v1`, including correction
-attempts. Copy `.env.example` to `.env` and set `OPENAI_API_KEY=ollama`; the client
-requires a nonempty key, which the local Ollama endpoint ignores (see
+Copy `.env.example` to `.env` and select the parser-generation backend with
+`PARSER_GENERATION_PROVIDER`. It defaults to `ollama` and accepts `ollama` or `mistral`.
+
+For Ollama, install and run `deepseek-r1` (`ollama pull deepseek-r1`) and set
+`OPENAI_API_KEY=ollama`. The workflow uses `http://localhost:11434/v1`; the client
+requires a nonempty key, which the local endpoint ignores (see
 [Ollama's compatibility documentation](https://docs.ollama.com/api/openai-compatibility)).
+
+For Mistral, set the following values. The workflow uses `mistral-large-latest`.
+
+```dotenv
+PARSER_GENERATION_PROVIDER=mistral
+MISTRAL_API_KEY=your-api-key
+```
+
+All correction attempts use the initially selected provider and model; the workflow does
+not automatically fall back between providers.
 
 Supply template text and extracted parameter objects with `index`, `mask_name`,
 and `value`. A flat array represents one example email:

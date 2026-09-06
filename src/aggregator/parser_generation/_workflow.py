@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -10,6 +11,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import Runnable
+from langchain_mistralai import ChatMistralAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import (  # pyright: ignore[reportMissingTypeStubs]
     END,
@@ -28,9 +30,13 @@ from ..template_syntax import template_parameter_count
 from ._inputs import GenerationInput, ParameterExamples
 from ._schemas import GeneratedFieldParsers
 
-_MODEL = "deepseek-r1"
+type _ModelProvider = Literal["ollama", "mistral"]
+
+_PROVIDER_ENV_VAR = "PARSER_GENERATION_PROVIDER"
+_OLLAMA_MODEL = "deepseek-r1"
+_MISTRAL_MODEL = "codestral-2508"
 _DOTENV_PATH = Path(__file__).resolve().parents[3] / ".env"
-_BASE_URL = "http://localhost:11434/v1"
+_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 _MAX_ATTEMPTS = 3
 _LANGFUSE_TRACE_NAME = "generate-field-parsers"
 _PROMPT = """Infer transaction field parsers from the template and parameter examples below.
@@ -42,7 +48,8 @@ Every field must have one of these configurations, with no extra keys:
   zero-based parameter indices. Values are joined with a single space in the specified
   index order. No transformations, formatting, or conditional logic are supported.
 - {"rule": "constant", "constant_value": "text"}: use a string supported by the
-  fixed template wording, not merely a value repeated in the examples. If the field can be "extracted" do not put in a constant value. Return as a extracted rule.
+  fixed template wording, not merely a value repeated in the examples. If the field can
+  be "extracted", return an extracted rule instead of a constant value.
 - {"rule": "missing"}: use when the template and examples do not support a reliable
   parser with the available rules. Never omit a field or return null.
 Field meanings: amount is the transaction amount, currency_code is its currency code,
@@ -97,18 +104,36 @@ def _correction(error: Exception, attempts: int) -> dict[str, object]:
     }
 
 
-def _build_graph() -> CompiledStateGraph[
-    _GenerationState, None, _GenerationState, _GenerationState
-]:
-    model = cast(
+def _model_provider() -> _ModelProvider:
+    provider = os.getenv(_PROVIDER_ENV_VAR, "ollama")
+    if provider not in ("ollama", "mistral"):
+        raise ValueError(f"{_PROVIDER_ENV_VAR} must be 'ollama' or 'mistral', got {provider!r}")
+    if provider == "mistral" and not os.getenv("MISTRAL_API_KEY", "").strip():
+        raise ValueError("MISTRAL_API_KEY must be set when using the Mistral provider")
+    return provider
+
+
+def _structured_model(
+    provider: _ModelProvider,
+) -> Runnable[LanguageModelInput, GeneratedFieldParsers]:
+    if provider == "ollama":
+        model = ChatOpenAI(model=_OLLAMA_MODEL, base_url=_OLLAMA_BASE_URL)
+    else:
+        model = ChatMistralAI(model_name=_MISTRAL_MODEL)
+    return cast(
         Runnable[LanguageModelInput, GeneratedFieldParsers],
-        ChatOpenAI(model=_MODEL, base_url=_BASE_URL).with_structured_output(  # pyright: ignore[reportUnknownMemberType]
+        model.with_structured_output(  # pyright: ignore[reportUnknownMemberType]
             GeneratedFieldParsers, method="json_schema"
         ),
     )
 
+
+def _build_graph(
+    provider: _ModelProvider,
+) -> CompiledStateGraph[_GenerationState, None, _GenerationState, _GenerationState]:
+    model = _structured_model(provider)
+
     def chat_model(state: _GenerationState) -> dict[str, object]:
-        print("Attempting to generate field parsers (attempt %d)" % (state["attempts"] + 1))
         attempts = state["attempts"] + 1
         try:
             response = model.invoke(state["messages"])
@@ -122,8 +147,6 @@ def _build_graph() -> CompiledStateGraph[
         return {"parsers": parsers, "attempts": attempts}
 
     def next_step(state: _GenerationState) -> Literal["retry", "done"]:
-        print("Parser generation attempt %d finished" % state["attempts"])
-        print("Generated parsers:", state["parsers"])
         return "done" if state["parsers"] is not None else "retry"
 
     builder = StateGraph(_GenerationState)
@@ -145,6 +168,7 @@ def generate_field_parsers(
         {"template_text": template_text, "parameter_examples": parameter_examples}
     )
     load_dotenv(dotenv_path=_DOTENV_PATH)
+    provider = _model_provider()
     input_state = cast(
         _GenerationState,
         {
@@ -156,7 +180,7 @@ def generate_field_parsers(
     )
     handler, langfuse = _langfuse_tracing()
     try:
-        result = _build_graph().invoke(  # pyright: ignore[reportUnknownMemberType]
+        result = _build_graph(provider).invoke(  # pyright: ignore[reportUnknownMemberType]
             input_state,
             config={"callbacks": [handler], "run_name": _LANGFUSE_TRACE_NAME},
         )
