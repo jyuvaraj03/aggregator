@@ -13,14 +13,15 @@ from dateutil.parser import ParserError, parse
 from peewee import JOIN
 
 from .database import database, database_connection
+from .email_content import readable_body
 from .models import (
-    TRANSACTION_FIELD_NAMES,
     Email,
-    FieldParser,
     Template,
     Transaction,
     TransactionExtractionStatus,
 )
+from .queries import parser_sets
+from .template_representation import represent_email_template
 
 _AMOUNT_PATTERN = re.compile(
     r"[+-]?(?:"
@@ -96,13 +97,8 @@ def _text(value: str | None) -> str | None:
     return value.strip() if value is not None else None
 
 
-def _transaction_values(email: Email) -> dict[str, object]:
-    representation = email.representation()
-    if representation is None:  # pragma: no cover - eligibility guarantees a template
-        raise ValueError("email has no assigned template")
-    fields = representation.resolved_fields
+def _transaction_values(fields: dict[str, str | None]) -> dict[str, object]:
     return {
-        "email": email,
         "amount": _amount(fields["amount"]),
         "currency_code": _text(fields["currency_code"]),
         "payee": _text(fields["payee"]),
@@ -123,16 +119,6 @@ def _pending_emails() -> list[Email]:
     return list(query)
 
 
-def _is_fully_configured(template: Template) -> bool:
-    names = {
-        parser.field_name
-        for parser in FieldParser.select(FieldParser.field_name).where(
-            FieldParser.template == template
-        )
-    }
-    return names == set(TRANSACTION_FIELD_NAMES)
-
-
 def extract_transactions() -> TransactionExtractionResult:
     """Create typed transactions for every eligible, unprocessed email."""
     with database_connection():
@@ -150,21 +136,27 @@ def extract_transactions() -> TransactionExtractionResult:
         failed_emails = 0
         for template_id, emails in grouped.items():
             template = Template.get_by_id(template_id)
-            if (
-                template.transaction_extraction_status == TransactionExtractionStatus.FAILED.value
-                or not _is_fully_configured(template)
-            ):
+            if template.transaction_extraction_status == TransactionExtractionStatus.FAILED.value:
                 skipped += len(emails)
                 continue
 
             values: list[dict[str, object]] = []
             failure: str | None = None
-            for email in emails:
-                try:
-                    values.append(_transaction_values(email))
-                except (IndexError, ValueError) as error:
-                    failure = f"email {email.id}: {error}"
-                    break
+            email = emails[0]
+            try:
+                parsers = parser_sets({template_id: template}, complete_only=True).get(template_id)
+                if parsers is None:
+                    skipped += len(emails)
+                    continue
+                for email in emails:
+                    representation = represent_email_template(
+                        template.text, readable_body(email.body_html, email.body_text), parsers
+                    )
+                    values.append(
+                        {"email": email, **_transaction_values(representation.resolved_fields)}
+                    )
+            except (IndexError, ValueError) as error:
+                failure = f"email {email.id}: {error}"
 
             if failure is not None:
                 with database.atomic():

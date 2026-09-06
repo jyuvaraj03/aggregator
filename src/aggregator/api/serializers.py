@@ -1,14 +1,9 @@
-"""Explicit, safe conversions from ORM models to API schemas."""
-
-# Peewee model primary-key descriptors are dynamically typed.
-# pyright: reportAttributeAccessIssue=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
+"""Pure conversions from prepared application results to HTTP schemas."""
 
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import cast
-
-from ..models import Email, Template, Transaction
+from ..read_models import EmailRecord, ParserSnapshot, TemplateRecord, TransactionRecord
+from ..template_representation import TemplateRepresentation
 from .parameter_serialization import indexed_parameter_responses
 from .schemas import (
     EmailDetail,
@@ -17,13 +12,15 @@ from .schemas import (
     EmailSummary,
     ResolvedTransactionFields,
     TemplateEmailExample,
+    TemplateFieldParsersResponse,
     TemplateResponse,
     TransactionResponse,
 )
 
 
-def email_representation(email: Email) -> EmailRepresentationResponse | None:
-    representation = email.representation()
+def email_representation(
+    representation: TemplateRepresentation | None,
+) -> EmailRepresentationResponse | None:
     if representation is None:
         return None
     return EmailRepresentationResponse(
@@ -32,7 +29,7 @@ def email_representation(email: Email) -> EmailRepresentationResponse | None:
     )
 
 
-def email_summary(email: Email) -> EmailSummary:
+def email_summary(email: EmailRecord) -> EmailSummary:
     return EmailSummary(
         id=email.id,
         message_id=email.message_id,
@@ -40,13 +37,12 @@ def email_summary(email: Email) -> EmailSummary:
         sender=email.sender,
         subject=email.subject,
         template_id=email.template_id,
-        representation=email_representation(email),
+        representation=email_representation(email.representation),
     )
 
 
-def email_detail(email: Email) -> EmailDetail:
-    body = email.readable_body() or (email.body_text or "")
-    representation = email.representation()
+def email_detail(email: EmailRecord) -> EmailDetail:
+    representation = email.representation
     detail_representation = (
         EmailDetailRepresentationResponse(
             template_text=representation.template_text,
@@ -68,14 +64,13 @@ def email_detail(email: Email) -> EmailDetail:
         sender=email.sender,
         subject=email.subject,
         template_id=email.template_id,
-        body=body,
+        body=email.body,
         representation=detail_representation,
     )
 
 
-def template_email_example(email: Email) -> TemplateEmailExample:
+def template_email_example(email: EmailRecord) -> TemplateEmailExample:
     """Serialize a template example without exposing email representations."""
-    body = email.readable_body() or (email.body_text or "")
     return TemplateEmailExample(
         id=email.id,
         message_id=email.message_id,
@@ -83,28 +78,45 @@ def template_email_example(email: Email) -> TemplateEmailExample:
         sender=email.sender,
         subject=email.subject,
         template_id=email.template_id,
-        body=body,
+        body=email.body,
     )
 
 
-def template_response(template: Template) -> TemplateResponse:
+def template_response(template: TemplateRecord) -> TemplateResponse:
     return TemplateResponse(
         id=template.id,
         text=template.text,
-        email_count=int(getattr(template, "email_count", 0)),
+        email_count=template.email_count,
     )
 
 
-def transaction_response(transaction: Transaction) -> TransactionResponse:
+def transaction_response(transaction: TransactionRecord) -> TransactionResponse:
     return TransactionResponse(
         id=transaction.id,
         email_id=transaction.email_id,
-        amount=cast(Decimal | None, transaction.amount),
+        amount=transaction.amount,
         currency_code=transaction.currency_code,
         payee=transaction.payee,
         description=transaction.description,
         transaction_date=transaction.transaction_date,
         account_hint=transaction.account_hint,
         is_credit=transaction.is_credit,
-        representation=email_representation(transaction.email),
+        representation=email_representation(transaction.representation),
+    )
+
+
+def parser_snapshot_response(snapshot: ParserSnapshot) -> TemplateFieldParsersResponse:
+    return TemplateFieldParsersResponse(
+        template_id=snapshot.template_id,
+        text=snapshot.text,
+        transaction_extraction_status=snapshot.transaction_extraction_status,
+        transaction_extraction_error=snapshot.transaction_extraction_error,
+        example_email_id=snapshot.example_email_id,
+        parameters=indexed_parameter_responses(snapshot.parameters),
+        parsers=snapshot.parsers,
+        preview=(
+            ResolvedTransactionFields.model_validate(snapshot.preview)
+            if snapshot.preview is not None
+            else None
+        ),
     )

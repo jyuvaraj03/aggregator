@@ -9,8 +9,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, cast
 
-from bs4 import BeautifulSoup
 from peewee import (
+    AutoField,
     BooleanField,
     CharField,
     DateField,
@@ -21,10 +21,12 @@ from peewee import (
 )
 
 from .database import database
-from .template_mining import template_parameter_count
-
-if TYPE_CHECKING:
-    from .template_representation import TemplateRepresentation
+from .parser_configuration import (
+    validate_field_name,
+    validate_parameter_bounds,
+    validate_parser_rule,
+)
+from .template_syntax import template_parameter_count
 
 
 class JSONTextField(TextField):
@@ -75,27 +77,6 @@ class DecimalTextField(TextField):
         return Decimal(str(value))
 
 
-class FieldParserRule(StrEnum):
-    EXTRACTED = "extracted"
-    CONSTANT = "constant"
-    MISSING = "missing"
-
-
-class TransactionFieldName(StrEnum):
-    """The fixed transaction fields exposed by the parser configuration API."""
-
-    AMOUNT = "amount"
-    CURRENCY_CODE = "currency_code"
-    PAYEE = "payee"
-    DESCRIPTION = "description"
-    TRANSACTION_DATE = "transaction_date"
-    ACCOUNT_HINT = "account_hint"
-    IS_CREDIT = "is_credit"
-
-
-TRANSACTION_FIELD_NAMES = tuple(field.value for field in TransactionFieldName)
-
-
 class TransactionExtractionStatus(StrEnum):
     PENDING = "pending"
     SUCCEEDED = "succeeded"
@@ -105,13 +86,10 @@ class TransactionExtractionStatus(StrEnum):
 class Template(Model):
     """A Drain3 pattern extracted from one or more email bodies."""
 
+    id = AutoField()
     text = TextField()
     transaction_extraction_status = CharField(default=TransactionExtractionStatus.PENDING.value)
     transaction_extraction_error = TextField(null=True)
-
-    def example_email(self) -> Email | None:
-        """Return the earliest email assigned to this template, if any."""
-        return self.emails.order_by(Email.received_at.asc(), Email.id.asc()).first()
 
     class Meta:
         database = database
@@ -121,6 +99,7 @@ class Template(Model):
 class FieldParser(Model):
     """One template-specific rule for resolving a fixed transaction field."""
 
+    id = AutoField()
     template = ForeignKeyField(Template, backref="field_parsers", on_delete="CASCADE")
     field_name = CharField()
     rule = CharField()
@@ -129,45 +108,10 @@ class FieldParser(Model):
 
     def validate(self) -> None:
         """Reject rule payloads that cannot be resolved for this template."""
-        try:
-            TransactionFieldName(self.field_name)
-        except ValueError as error:
-            raise ValueError(f"Unsupported transaction field name: {self.field_name!r}") from error
-
-        try:
-            rule = FieldParserRule(self.rule)
-        except ValueError as error:
-            raise ValueError(f"Unsupported field parser rule: {self.rule!r}") from error
-
+        validate_field_name(self.field_name)
         indices = cast(list[int], self.parameter_indices)
-        if rule is FieldParserRule.EXTRACTED:
-            if not indices:
-                raise ValueError("An extracted field parser requires at least one parameter index")
-            if len(indices) != len(set(indices)):
-                raise ValueError(
-                    "An extracted field parser cannot contain duplicate parameter indices"
-                )
-            if any(index < 0 for index in indices):
-                raise ValueError(
-                    "An extracted field parser cannot contain negative parameter indices"
-                )
-            parameter_count = template_parameter_count(self.template.text)
-            if any(index >= parameter_count for index in indices):
-                raise ValueError(
-                    "An extracted field parser references an unavailable parameter index"
-                )
-            if self.constant_value is not None:
-                raise ValueError("An extracted field parser cannot have a constant value")
-            return
-
-        if indices:
-            raise ValueError(f"A {rule.value} field parser cannot have parameter indices")
-        if rule is FieldParserRule.CONSTANT:
-            if self.constant_value is None:
-                raise ValueError("A constant field parser requires a constant value")
-            return
-        if self.constant_value is not None:
-            raise ValueError("A missing field parser cannot have a constant value")
+        validate_parser_rule(self.rule, indices, self.constant_value)
+        validate_parameter_bounds(indices, template_parameter_count(self.template.text))
 
     def save(self, *args: object, **kwargs: object) -> int:
         self.validate()
@@ -182,6 +126,7 @@ class FieldParser(Model):
 class Email(Model):
     """An immutable snapshot of a Gmail message imported by the synchronizer."""
 
+    id = AutoField()
     message_id = CharField(unique=True)
     history_id = CharField(null=True)
     received_at = DateTimeField()
@@ -193,20 +138,9 @@ class Email(Model):
     authentication_status = TextField(null=True)
     template = ForeignKeyField(Template, null=True, backref="emails", on_delete="SET NULL")
 
-    def readable_body(self) -> str:
-        soup = BeautifulSoup(self.body_html or "", "html.parser")
-        return " ".join(soup.get_text("\n", strip=True).split())
-
-    def representation(self) -> TemplateRepresentation | None:
-        """Return this email's template and values, if it has been assigned."""
-        if self.template_id is None:
-            return None
-
-        # Delaying this import keeps the ORM model and representation helper
-        # independent at import time.
-        from .template_representation import represent_email_template
-
-        return represent_email_template(self)
+    if TYPE_CHECKING:
+        # Peewee creates this raw foreign-key accessor dynamically.
+        template_id: int | None
 
     class Meta:
         database = database
@@ -216,6 +150,7 @@ class Email(Model):
 class Transaction(Model):
     """Typed transaction fields extracted from one email."""
 
+    id = AutoField()
     email = ForeignKeyField(Email, backref="transaction", unique=True, on_delete="CASCADE")
     amount = DecimalTextField(null=True)
     currency_code = TextField(null=True)
@@ -224,6 +159,9 @@ class Transaction(Model):
     transaction_date = DateField(null=True)
     account_hint = TextField(null=True)
     is_credit = BooleanField(null=True)
+
+    if TYPE_CHECKING:
+        email_id: int
 
     class Meta:
         database = database

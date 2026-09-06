@@ -10,16 +10,20 @@ from pathlib import Path
 import pytest
 from playhouse.migrations import Runner
 
-from aggregator.api.schemas import ConstantFieldParser, FieldParserSet, MissingFieldParser
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.field_parsers import replace_field_parsers
 from aggregator.models import (
     Email,
     FieldParser,
-    FieldParserRule,
     Template,
     Transaction,
     TransactionExtractionStatus,
+)
+from aggregator.parser_configuration import (
+    ConstantFieldParser,
+    FieldParserRule,
+    FieldParserSet,
+    MissingFieldParser,
     TransactionFieldName,
 )
 from aggregator.transaction_extraction import (
@@ -197,7 +201,7 @@ def test_replacing_parsers_clears_a_template_failure_for_retry() -> None:
     _email(1, template)
     missing = MissingFieldParser(rule="missing")
     replace_field_parsers(
-        template,
+        template.id,
         FieldParserSet(
             amount=ConstantFieldParser(rule="constant", constant_value="1,000"),
             currency_code=missing,

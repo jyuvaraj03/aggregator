@@ -16,7 +16,9 @@ from aggregator.database import (
     connect_database,
     database,
 )
-from aggregator.models import Email, FieldParser, FieldParserRule, Template, TransactionFieldName
+from aggregator.models import Email, FieldParser, Template
+from aggregator.parser_configuration import FieldParserRule, TransactionFieldName
+from aggregator.reads import email_by_id
 from aggregator.template_assignment import (
     TemplateAssignmentResult,
     assign_email_templates,
@@ -248,7 +250,9 @@ def test_email_representation_returns_template_and_ordered_parameters() -> None:
     template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email("order", "<p>Order #42 confirmed for $7.20</p>", template=template)
 
-    representation = email.representation()
+    record = email_by_id(email.id)
+    assert record is not None
+    representation = record.representation
 
     assert representation is not None
     assert representation.template_text == template.text
@@ -283,7 +287,9 @@ def test_email_representation_resolves_extracted_constant_and_missing_fields() -
         rule=FieldParserRule.MISSING,
     )
 
-    representation = email.representation()
+    record = email_by_id(email.id)
+    assert record is not None
+    representation = record.representation
 
     assert representation is not None
     assert representation.resolved_fields == {
@@ -301,7 +307,9 @@ def test_email_representation_has_no_resolved_fields_without_parsers() -> None:
     template = Template.create(text="Order #<NUMBER> confirmed")
     email = _email("order", "<p>Order #42 confirmed</p>", template=template)
 
-    representation = email.representation()
+    record = email_by_id(email.id)
+    assert record is not None
+    representation = record.representation
 
     assert representation is not None
     assert representation.resolved_fields == {
@@ -388,15 +396,15 @@ def test_representation_defensively_revalidates_stale_parser_indices() -> None:
     ).execute()
     email = _email("order", "<p>Order #42 confirmed</p>", template=template)
 
-    representation = email.representation()
-
-    assert representation is not None
     with pytest.raises(ValueError, match="unavailable"):
-        _ = representation.resolved_fields
+        email_by_id(email.id)
 
 
 def test_unassigned_email_has_no_representation() -> None:
-    assert _email("untagged", "<p>Order #42 confirmed</p>").representation() is None
+    email = _email("untagged", "<p>Order #42 confirmed</p>")
+    record = email_by_id(email.id)
+    assert record is not None
+    assert record.representation is None
 
 
 def test_assignment_loads_untagged_html_emails_and_assigns_template() -> None:

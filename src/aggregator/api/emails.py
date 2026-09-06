@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from peewee import SqliteDatabase
+from fastapi import APIRouter, HTTPException, Query
 
-from ..queries import (
-    PAGE_SIZE,
-    EmailTemplateFilter,
-    email_by_id,
-    email_page,
-    template_by_id,
-)
-from .dependencies import database_dependency
+from ..queries import PAGE_SIZE, EmailTemplateFilter
+from ..reads import email_by_id, email_page
 from .schemas import EmailDetail, EmailPage
 from .serializers import email_detail, email_summary
 
@@ -23,15 +16,11 @@ router = APIRouter(prefix="/emails", tags=["emails"])
 
 @router.get("", response_model=EmailPage)
 def list_emails(
-    database: Annotated[SqliteDatabase, Depends(database_dependency)],
     page: int = Query(default=1, ge=1),
     template_id: int | Literal["null"] | None = Query(default=None),
 ) -> EmailPage:
-    del database
     template_filter = None
     if isinstance(template_id, int):
-        if template_by_id(template_id) is None:
-            raise HTTPException(status_code=404, detail="Template not found")
         template_filter = EmailTemplateFilter(template_id)
     elif template_id == "null":
         template_filter = EmailTemplateFilter(None)
@@ -49,9 +38,7 @@ def list_emails(
 @router.get("/{email_id}", response_model=EmailDetail)
 def get_email(
     email_id: int,
-    database: Annotated[SqliteDatabase, Depends(database_dependency)],
 ) -> EmailDetail:
-    del database
     email = email_by_id(email_id)
     if email is None:
         raise HTTPException(status_code=404, detail="Email not found")

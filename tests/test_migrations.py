@@ -6,7 +6,7 @@ from peewee import SqliteDatabase
 from playhouse.migrations import Runner
 
 from aggregator.database import PROJECT_ROOT
-from aggregator.models import TRANSACTION_FIELD_NAMES
+from aggregator.parser_configuration import TRANSACTION_FIELD_NAMES
 
 
 def test_field_catalog_migration_resets_parsers_and_drops_fields(tmp_path: Path) -> None:

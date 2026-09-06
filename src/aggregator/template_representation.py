@@ -1,59 +1,46 @@
-# Drain3 is intentionally dynamically typed.
-# Peewee model primary-key descriptors are dynamically typed.
-# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+"""Database-independent template extraction and field resolution."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
 
-from drain3.template_miner import ExtractedParameter
-
-from aggregator.models import TRANSACTION_FIELD_NAMES, FieldParser, FieldParserRule
-from aggregator.template_mining import MiningRecord, get_extracted_parameters
-
-if TYPE_CHECKING:
-    from aggregator.models import Email
+from .parser_configuration import (
+    TRANSACTION_FIELD_NAMES,
+    ConstantFieldParser,
+    ExtractedFieldParser,
+    FieldParserSet,
+    validate_parser_set,
+)
+from .template_mining import (
+    ExtractedParameter,
+    MiningRecord,
+    get_extracted_parameters,
+)
+from .template_syntax import template_parameter_count
 
 
 @dataclass(frozen=True, slots=True)
 class TemplateRepresentation:
     template_text: str
-    extracted_parameters: list[ExtractedParameter]
-    field_parsers: list[FieldParser]
-
-    @property
-    def resolved_fields(self) -> dict[str, str | None]:
-        """Resolve this template's configured fields for the represented email."""
-        resolved: dict[str, str | None] = dict.fromkeys(TRANSACTION_FIELD_NAMES)
-        for parser in self.field_parsers:
-            parser.validate()
-            rule = FieldParserRule(parser.rule)
-            if rule is FieldParserRule.EXTRACTED:
-                resolved[parser.field_name] = " ".join(
-                    self.extracted_parameters[index].value
-                    for index in cast(list[int], parser.parameter_indices)
-                )
-            elif rule is FieldParserRule.CONSTANT:
-                resolved[parser.field_name] = parser.constant_value
-            else:
-                resolved[parser.field_name] = None
-        return resolved
+    extracted_parameters: tuple[ExtractedParameter, ...]
+    resolved_fields: dict[str, str | None]
 
 
-def represent_email_template(email: Email) -> TemplateRepresentation:
-    """Build a representation for an email known to have a template."""
-    template = email.template
-    if template is None:
-        raise ValueError("Cannot represent an email without a template")
+def resolve_fields(
+    parameters: tuple[ExtractedParameter, ...], parsers: FieldParserSet
+) -> dict[str, str | None]:
+    """Resolve configurations against the supplied parameter values."""
+    validate_parser_set(parsers, len(parameters))
+    resolved: dict[str, str | None] = dict.fromkeys(TRANSACTION_FIELD_NAMES)
+    for name, parser in parsers.configured().items():
+        if isinstance(parser, ExtractedFieldParser):
+            resolved[name] = " ".join(parameters[index].value for index in parser.parameter_indices)
+        elif isinstance(parser, ConstantFieldParser):
+            resolved[name] = parser.constant_value
+    return resolved
 
-    mining_record = MiningRecord(email.id, email.readable_body() or (email.body_text or ""))
-    template_text = template.text
-    parameters = get_extracted_parameters(mining_record, template_text)
 
-    field_parsers = list(
-        FieldParser.select().where(FieldParser.template == template).order_by(FieldParser.id)
-    )
-    return TemplateRepresentation(
-        template_text=template_text,
-        extracted_parameters=parameters,
-        field_parsers=field_parsers,
-    )
+def represent_email_template(
+    template_text: str, text: str, parsers: FieldParserSet
+) -> TemplateRepresentation:
+    validate_parser_set(parsers, template_parameter_count(template_text))
+    parameters = tuple(get_extracted_parameters(MiningRecord("", text), template_text))
+    return TemplateRepresentation(template_text, parameters, resolve_fields(parameters, parsers))

@@ -5,13 +5,11 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 
 from drain3 import TemplateMiner
 from drain3.masking import MaskingInstruction
-from drain3.template_miner import ExtractedParameter
 from drain3.template_miner_config import TemplateMinerConfig
 
 MINIMUM_CLUSTER_SIZE = 3
@@ -45,19 +43,13 @@ MASKING_INSTRUCTIONS = (
     ),
 )
 
-# Drain3 uses these markers for values masked by this application's mining
-# configuration. ``<*>`` is its generic variable marker.
-TEMPLATE_PARAMETER_PATTERN = re.compile(r"<(?:DATE|TIME|CURRENCY_CODE|NUMBER|\*)>")
 
+@dataclass(frozen=True, slots=True)
+class ExtractedParameter:
+    """Application-owned value extracted from a template parameter."""
 
-def template_parameter_count(template_text: str) -> int:
-    """Return the number of extractable parameter positions in a template."""
-    return len(TEMPLATE_PARAMETER_PATTERN.findall(template_text))
-
-
-def template_parameter_masks(template_text: str) -> list[str]:
-    """Return parameter mask names in their template order."""
-    return [match.group()[1:-1] for match in TEMPLATE_PARAMETER_PATTERN.finditer(template_text)]
+    value: str
+    mask_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +91,7 @@ def get_extracted_parameters(
     """Extract the ordered masked values for a record and a mined template."""
     miner = _create_miner()
     parameters = miner.extract_parameters(template_text, mining_record.text) or []
-    return list(parameters)
+    return [ExtractedParameter(parameter.value, parameter.mask_name) for parameter in parameters]
 
 
 def bulk_mine_templates(records: Iterable[MiningRecord]) -> MiningResult:

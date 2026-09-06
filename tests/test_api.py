@@ -17,7 +17,8 @@ from aggregator.api.parameter_serialization import indexed_parameter_responses
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
-from aggregator.models import TRANSACTION_FIELD_NAMES, Email, FieldParser, Template, Transaction
+from aggregator.models import Email, FieldParser, Template, Transaction
+from aggregator.parser_configuration import TRANSACTION_FIELD_NAMES
 from aggregator.template_assignment import TemplateAssignmentResult
 from aggregator.transaction_extraction import TransactionExtractionResult
 
