@@ -18,7 +18,7 @@ from aggregator.api.parameter_serialization import indexed_parameter_responses
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
-from aggregator.models import Email, FieldParser, Template, Transaction
+from aggregator.models import Account, Email, FieldParser, Template, Transaction
 from aggregator.parser_configuration import TRANSACTION_FIELD_NAMES, FieldParserSet
 from aggregator.template_assignment import TemplateAssignmentResult
 from aggregator.transaction_extraction import TransactionExtractionResult
@@ -51,6 +51,74 @@ def test_indexed_parameter_responses() -> None:
         {"index": 0, "mask_name": "NUMBER", "value": "42"},
         {"index": 1, "mask_name": "CURRENCY_CODE", "value": None},
     ]
+
+
+def test_account_creation_trims_name_and_rejects_invalid_names(client: TestClient) -> None:
+    response = client.post("/accounts", json={"name": "  Checking  "})
+
+    assert response.status_code == 201
+    assert response.json() == {"id": 1, "name": "Checking"}
+    assert Account.get_by_id(1).name == "Checking"
+    assert client.post("/accounts", json={"name": " \t\n "}).status_code == 422
+    assert client.post("/accounts", json={}).status_code == 422
+
+
+def test_account_uniqueness_is_exact_case_and_conflicts_return_409(client: TestClient) -> None:
+    assert client.post("/accounts", json={"name": "Savings"}).status_code == 201
+
+    duplicate = client.post("/accounts", json={"name": " Savings "})
+    distinct_case = client.post("/accounts", json={"name": "savings"})
+
+    assert duplicate.status_code == 409
+    assert duplicate.json() == {"detail": "Account name already exists"}
+    assert distinct_case.status_code == 201
+    assert distinct_case.json()["name"] == "savings"
+
+
+def test_account_detail_pagination_and_invalid_page(client: TestClient) -> None:
+    for index in range(51):
+        Account.create(name=f"Account {index}")
+
+    first_page = client.get("/accounts?page=1")
+
+    assert first_page.status_code == 200
+    payload = first_page.json()
+    assert payload["total"] == 51
+    assert payload["page"] == 1
+    assert payload["page_size"] == 50
+    assert payload["total_pages"] == 2
+    assert len(payload["items"]) == 50
+    assert payload["items"][0] == {"id": 51, "name": "Account 50"}
+    assert client.get("/accounts?page=2").json()["items"] == [{"id": 1, "name": "Account 0"}]
+    assert client.get("/accounts?page=0").status_code == 422
+    assert client.get("/accounts?page=invalid").status_code == 422
+    assert client.get("/accounts/1").json() == {"id": 1, "name": "Account 0"}
+    assert client.get("/accounts/999").status_code == 404
+
+
+def test_account_rename_and_missing_update(client: TestClient) -> None:
+    first = Account.create(name="First")
+    Account.create(name="Second")
+
+    renamed = client.patch(f"/accounts/{first.id}", json={"name": "  Primary  "})
+
+    assert renamed.status_code == 200
+    assert renamed.json() == {"id": first.id, "name": "Primary"}
+    assert client.patch(f"/accounts/{first.id}", json={"name": "Primary"}).status_code == 200
+    assert client.patch(f"/accounts/{first.id}", json={"name": "Second"}).status_code == 409
+    assert client.patch(f"/accounts/{first.id}", json={"name": "  "}).status_code == 422
+    assert client.patch("/accounts/999", json={"name": "Missing"}).status_code == 404
+
+
+def test_account_delete_returns_empty_204_and_missing_resource(client: TestClient) -> None:
+    account = Account.create(name="Disposable")
+
+    response = client.delete(f"/accounts/{account.id}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert Account.get_or_none(Account.id == account.id) is None
+    assert client.delete(f"/accounts/{account.id}").status_code == 404
 
 
 def _email(index: int, *, template: Template | None = None) -> Email:

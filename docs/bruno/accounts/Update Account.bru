@@ -1,0 +1,17 @@
+meta {
+  name: Update Account
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/accounts/1
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Primary Checking"
+  }
+}

@@ -83,6 +83,17 @@ class TransactionExtractionStatus(StrEnum):
     FAILED = "failed"
 
 
+class Account(Model):
+    """An independently managed financial account."""
+
+    id = AutoField()
+    name = TextField(unique=True)
+
+    class Meta:
+        database = database
+        table_name = "accounts"
+
+
 class Template(Model):
     """A Drain3 pattern extracted from one or more email bodies."""
 

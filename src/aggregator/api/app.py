@@ -7,9 +7,10 @@ from fastapi.responses import JSONResponse
 
 from ..email_pull import CredentialsError, GmailRequestError, InvalidInputError
 from ..queries import TemplateNotFoundError
-from . import actions, emails, field_parsers, templates, transactions
+from . import accounts, actions, emails, field_parsers, templates, transactions
 
 app = FastAPI(title="Email Aggregator API", version="0.1.0")
+app.include_router(accounts.router)
 app.include_router(emails.router)
 app.include_router(templates.router)
 app.include_router(field_parsers.router)

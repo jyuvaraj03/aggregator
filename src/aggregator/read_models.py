@@ -16,6 +16,12 @@ class Page[Item]:
 
 
 @dataclass(frozen=True, slots=True)
+class AccountRecord:
+    id: int
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
 class EmailRecord:
     id: int
     message_id: str

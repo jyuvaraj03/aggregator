@@ -119,6 +119,27 @@ class TransactionPage(BaseModel):
     total_pages: int
 
 
+class AccountCreate(BaseModel):
+    name: str
+
+
+class AccountUpdate(BaseModel):
+    name: str
+
+
+class AccountResponse(BaseModel):
+    id: int
+    name: str
+
+
+class AccountPage(BaseModel):
+    items: list[AccountResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 class TemplatePage(BaseModel):
     items: list[TemplateResponse]
     total: int

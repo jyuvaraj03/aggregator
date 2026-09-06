@@ -1,8 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 # Peewee and its migration helper are dynamically typed.
 # pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false
-from peewee import SqliteDatabase
+from peewee import IntegrityError, SqliteDatabase
 from playhouse.migrations import Runner
 
 from aggregator.database import PROJECT_ROOT
@@ -57,7 +59,7 @@ def test_field_catalog_migration_reverse_restores_seeded_legacy_tables(tmp_path:
 def test_transaction_migration_adds_and_removes_transaction_storage(tmp_path: Path) -> None:
     database = SqliteDatabase(str(tmp_path / "migration.sqlite3"), pragmas={"foreign_keys": 1})
     runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
-    runner.up()
+    runner.up("0006_create_transactions")
 
     assert "transactions" in database.get_tables()
     assert {
@@ -74,3 +76,20 @@ def test_transaction_migration_adds_and_removes_transaction_storage(tmp_path: Pa
     template_columns = {column.name for column in database.get_columns("templates")}
     assert "transaction_extraction_status" not in template_columns
     assert "transaction_extraction_error" not in template_columns
+
+
+def test_account_migration_adds_unique_storage_and_rolls_back(tmp_path: Path) -> None:
+    database = SqliteDatabase(str(tmp_path / "migration.sqlite3"), pragmas={"foreign_keys": 1})
+    runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
+    runner.up()
+
+    assert "accounts" in database.get_tables()
+    assert [column.name for column in database.get_columns("accounts")] == ["id", "name"]
+    database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Checking",))
+    with pytest.raises(IntegrityError, match="UNIQUE constraint failed"):
+        database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Checking",))
+    database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("checking",))
+
+    runner.down()
+
+    assert "accounts" not in database.get_tables()
