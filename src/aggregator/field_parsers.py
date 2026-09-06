@@ -4,7 +4,7 @@
 # pyright: reportAttributeAccessIssue=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from typing import Literal, cast
 
-from . import queries
+from . import parser_generation, queries
 from .database import database, database_connection
 from .email_content import readable_body
 from .models import FieldParser, Template, TransactionExtractionStatus
@@ -17,6 +17,10 @@ from .parser_configuration import (
 from .read_models import ParserSnapshot
 from .template_representation import represent_email_template
 from .template_syntax import template_parameter_count, template_parameter_masks
+
+
+class FieldParserGenerationError(Exception):
+    """Parser inference could not produce a configuration to persist."""
 
 
 def _snapshot(template: Template, parsers: FieldParserSet) -> ParserSnapshot:
@@ -51,6 +55,35 @@ def field_parser_snapshot(template_id: int) -> ParserSnapshot:
         template = queries.require_template(template_id)
         parsers = queries.parser_sets({template_id: template})[template_id]
         return _snapshot(template, parsers)
+
+
+def generate_and_replace_field_parsers(template_id: int) -> ParserSnapshot:
+    """Infer parsers from the earliest email, then atomically replace the stored set."""
+    with database_connection():
+        template = queries.require_template(template_id)
+        example = queries.example_email(template.id)
+        if example is None:
+            raise RuntimeError("Template has no associated email")
+        template_text = str(template.text)
+        representation = represent_email_template(
+            template_text,
+            readable_body(example.body_html, example.body_text),
+            FieldParserSet(),
+        )
+        parameter_example: list[dict[str, object]] = [
+            {
+                "index": index,
+                "mask_name": parameter.mask_name,
+                "value": parameter.value,
+            }
+            for index, parameter in enumerate(representation.extracted_parameters)
+        ]
+
+    try:
+        parsers = parser_generation.generate_field_parsers(template_text, parameter_example)
+    except Exception as error:
+        raise FieldParserGenerationError("Field parser generation failed") from error
+    return replace_field_parsers(template_id, parsers)
 
 
 def replace_field_parsers(template_id: int, parser_set: FieldParserSet) -> ParserSnapshot:

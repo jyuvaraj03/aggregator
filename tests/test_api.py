@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from playhouse.migrations import Runner
 
+from aggregator import field_parsers
 from aggregator.api import actions
 from aggregator.api.app import app
 from aggregator.api.parameter_serialization import indexed_parameter_responses
@@ -18,7 +19,7 @@ from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, dat
 from aggregator.email_pull import CredentialsError, GmailRequestError
 from aggregator.email_sync import SyncResult
 from aggregator.models import Email, FieldParser, Template, Transaction
-from aggregator.parser_configuration import TRANSACTION_FIELD_NAMES
+from aggregator.parser_configuration import TRANSACTION_FIELD_NAMES, FieldParserSet
 from aggregator.template_assignment import TemplateAssignmentResult
 from aggregator.transaction_extraction import TransactionExtractionResult
 
@@ -323,6 +324,88 @@ def test_field_parser_snapshot_without_example_and_request_validation(client: Te
         assert (
             client.put(f"/templates/{template.id}/field-parsers", json=payload).status_code == 422
         )
+
+
+def test_generate_field_parsers_endpoint_replaces_and_previews(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = Template.create(
+        text="Paid <CURRENCY_CODE><NUMBER>",
+        transaction_extraction_status="failed",
+        transaction_extraction_error="old failure",
+    )
+    email = _email(1, template=template)
+    email.body_html = "<p>Paid $19</p>"
+    email.save()
+    FieldParser.create(
+        template=template,
+        field_name="payee",
+        rule="constant",
+        constant_value="Old Shop",
+    )
+    generated = FieldParserSet.model_validate(
+        {
+            "amount": {"rule": "extracted", "parameter_indices": [1]},
+            "currency_code": {"rule": "extracted", "parameter_indices": [0]},
+        }
+    )
+
+    def generate(*args: object) -> FieldParserSet:
+        return generated
+
+    monkeypatch.setattr(
+        field_parsers.parser_generation,
+        "generate_field_parsers",
+        generate,
+    )
+
+    response = client.post(f"/templates/{template.id}/field-parsers/generate")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parsers"] == {
+        **dict.fromkeys(TRANSACTION_FIELD_NAMES),
+        "amount": {"rule": "extracted", "parameter_indices": [1]},
+        "currency_code": {"rule": "extracted", "parameter_indices": [0]},
+    }
+    assert payload["preview"]["amount"] == "19"
+    assert payload["preview"]["currency_code"] == "$"
+    assert payload["transaction_extraction_status"] == "pending"
+    assert payload["transaction_extraction_error"] is None
+
+
+def test_generate_field_parsers_endpoint_failures(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = Template.create(text="Paid <NUMBER>")
+    _email(1, template=template)
+    FieldParser.create(
+        template=template,
+        field_name="payee",
+        rule="constant",
+        constant_value="Old Shop",
+    )
+    calls = 0
+
+    def fail_generation(*args: object) -> FieldParserSet:
+        nonlocal calls
+        calls += 1
+        raise ConnectionError("provider unavailable")
+
+    monkeypatch.setattr(field_parsers.parser_generation, "generate_field_parsers", fail_generation)
+
+    failed = client.post(f"/templates/{template.id}/field-parsers/generate")
+    missing = client.post("/templates/999/field-parsers/generate")
+
+    assert failed.status_code == 502
+    assert failed.json() == {"detail": "Field parser generation failed"}
+    assert client.get(f"/templates/{template.id}/field-parsers").json()["parsers"]["payee"] == {
+        "rule": "constant",
+        "constant_value": "Old Shop",
+    }
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "Template not found"}
+    assert calls == 1
 
 
 def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient) -> None:

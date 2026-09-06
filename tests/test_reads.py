@@ -14,7 +14,12 @@ from playhouse.test_utils import count_queries
 from aggregator import field_parsers, queries, reads, template_representation
 from aggregator.api import serializers
 from aggregator.database import PROJECT_ROOT, close_database, database, database_connection
-from aggregator.field_parsers import field_parser_snapshot, replace_field_parsers
+from aggregator.field_parsers import (
+    FieldParserGenerationError,
+    field_parser_snapshot,
+    generate_and_replace_field_parsers,
+    replace_field_parsers,
+)
 from aggregator.models import Email, FieldParser, Template, Transaction
 from aggregator.parser_configuration import (
     TRANSACTION_FIELD_NAMES,
@@ -201,6 +206,93 @@ def test_replacement_rolls_back_when_storage_fails(monkeypatch: pytest.MonkeyPat
             )
     assert database.is_closed()
     assert field_parser_snapshot(template.id) == original
+
+
+def test_generation_uses_earliest_email_after_releasing_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with database_connection():
+        template = Template.create(
+            text="Paid <CURRENCY_CODE><NUMBER>",
+            transaction_extraction_status="failed",
+            transaction_extraction_error="old failure",
+        )
+        later = _email(2, template, html="<p>Paid $20</p>")
+        later.received_at = datetime(2026, 9, 2, tzinfo=UTC)
+        later.save()
+        earlier = _email(1, template, html="<p>Paid Rs.10</p>")
+        earlier.received_at = datetime(2026, 9, 1, tzinfo=UTC)
+        earlier.save()
+        FieldParser.create(
+            template=template,
+            field_name="payee",
+            rule="constant",
+            constant_value="Old Shop",
+        )
+
+    generated = FieldParserSet.model_validate(
+        {
+            **{name: {"rule": "missing"} for name in TRANSACTION_FIELD_NAMES},
+            "amount": {"rule": "extracted", "parameter_indices": [1]},
+            "currency_code": {"rule": "extracted", "parameter_indices": [0]},
+        }
+    )
+
+    def generate(template_text: str, parameter_example: object) -> FieldParserSet:
+        assert database.is_closed()
+        assert template_text == "Paid <CURRENCY_CODE><NUMBER>"
+        assert parameter_example == [
+            {"index": 0, "mask_name": "CURRENCY_CODE", "value": "Rs."},
+            {"index": 1, "mask_name": "NUMBER", "value": "10"},
+        ]
+        return generated
+
+    monkeypatch.setattr(field_parsers.parser_generation, "generate_field_parsers", generate)
+
+    snapshot = generate_and_replace_field_parsers(template.id)
+
+    assert snapshot.example_email_id == earlier.id
+    assert snapshot.parsers == generated
+    assert snapshot.preview is not None
+    assert snapshot.preview["amount"] == "10"
+    assert snapshot.preview["currency_code"] == "Rs."
+    assert snapshot.preview["payee"] is None
+    assert snapshot.transaction_extraction_status == "pending"
+    assert snapshot.transaction_extraction_error is None
+    assert database.is_closed()
+
+
+def test_generation_failure_preserves_existing_parsers(monkeypatch: pytest.MonkeyPatch) -> None:
+    with database_connection():
+        template = Template.create(text="Paid <NUMBER>")
+        _email(1, template)
+    original = replace_field_parsers(template.id, _parsers())
+
+    def fail_generation(*args: object) -> FieldParserSet:
+        raise ConnectionError("provider unavailable")
+
+    monkeypatch.setattr(
+        field_parsers.parser_generation,
+        "generate_field_parsers",
+        fail_generation,
+    )
+
+    with pytest.raises(FieldParserGenerationError, match="Field parser generation failed"):
+        generate_and_replace_field_parsers(template.id)
+
+    assert field_parser_snapshot(template.id) == original
+
+
+def test_missing_template_does_not_invoke_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_generation(*args: object) -> FieldParserSet:
+        pytest.fail("Generation should not run")
+
+    monkeypatch.setattr(
+        field_parsers.parser_generation, "generate_field_parsers", unexpected_generation
+    )
+    with pytest.raises(TemplateNotFoundError, match="Template not found"):
+        generate_and_replace_field_parsers(999)
+    assert database.is_closed()
 
 
 def test_read_failure_closes_operation_owned_connection() -> None:
