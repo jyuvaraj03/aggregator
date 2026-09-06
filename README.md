@@ -136,6 +136,15 @@ This configuration is intended for a local personal Gmail account.
 
 ## Development
 
+### Local email frontend
+
+The React application in [`frontend/`](frontend/README.md) lets you sync a Gmail
+label and inspect all stored emails. Start `uv run aggregator-api`, then run
+`npm ci` and `npm run dev` from `frontend/`. Open http://127.0.0.1:5173.
+See the frontend README for API type generation and browser test commands.
+
+### Backend checks
+
 ```bash
 uv run pytest
 uv run ruff check .
