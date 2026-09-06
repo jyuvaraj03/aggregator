@@ -38,6 +38,7 @@ class TemplateRecord:
     id: int
     text: str
     email_count: int
+    account_id: int | None
     example: EmailRecord | None = None
 
 
@@ -45,6 +46,7 @@ class TemplateRecord:
 class TransactionRecord:
     id: int
     email_id: int
+    account_id: int | None
     amount: Decimal | None
     currency_code: str | None
     payee: str | None

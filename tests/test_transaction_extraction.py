@@ -13,6 +13,7 @@ from playhouse.migrations import Runner
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
 from aggregator.field_parsers import replace_field_parsers
 from aggregator.models import (
+    Account,
     Email,
     FieldParser,
     Template,
@@ -62,6 +63,11 @@ def _email(index: int, template: Template | None = None) -> Email:
 
 
 def _configure(template: Template, **constants: str) -> None:
+    account = Account.get_or_none(Account.name == "Checking")
+    if account is None:
+        account = Account.create(name="Checking")
+    template.account = account
+    template.save()
     for field_name in TransactionFieldName:
         constant = constants.get(field_name.value)
         FieldParser.create(
@@ -153,6 +159,8 @@ def test_extraction_persists_typed_transaction_values() -> None:
     assert transaction.is_credit is False
     assert type(transaction.is_credit) is bool
     assert transaction.payee == "Example Shop"
+    assert transaction.account_id == template.account_id
+    assert transaction.account_hint == "1234"
     assert Template.get_by_id(template.id).transaction_extraction_status == "succeeded"
 
 
@@ -193,8 +201,10 @@ def test_extraction_is_template_atomic_and_skips_ineligible_emails() -> None:
 
 
 def test_replacing_parsers_clears_a_template_failure_for_retry() -> None:
+    account = Account.create(name="Checking")
     template = Template.create(
         text="receipt",
+        account=account,
         transaction_extraction_status=TransactionExtractionStatus.FAILED.value,
         transaction_extraction_error="old failure",
     )
@@ -229,3 +239,25 @@ def test_new_email_for_succeeded_template_remains_eligible() -> None:
 
     assert extract_transactions() == TransactionExtractionResult(1, 1, 0, 0, 0)
     assert Transaction.select().count() == 2
+
+
+def test_extraction_skips_unassigned_template_before_parser_or_representation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aggregator import transaction_extraction
+
+    template = Template.create(text="receipt")
+    email = _email(1, template)
+
+    def unexpected(*args: object, **kwargs: object) -> object:
+        pytest.fail("Unassigned templates must not load parsers or representations")
+
+    monkeypatch.setattr(transaction_extraction, "parser_sets", unexpected)
+    monkeypatch.setattr(transaction_extraction, "represent_email_template", unexpected)
+
+    assert extract_transactions() == TransactionExtractionResult(1, 0, 1, 0, 0)
+    assert Transaction.select().count() == 0
+    refreshed = Template.get_by_id(template.id)
+    assert refreshed.transaction_extraction_status == TransactionExtractionStatus.PENDING.value
+    assert refreshed.transaction_extraction_error is None
+    assert Email.get_by_id(email.id).id == email.id

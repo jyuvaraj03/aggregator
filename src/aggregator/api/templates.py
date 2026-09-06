@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .. import template_accounts
 from ..queries import PAGE_SIZE
 from ..reads import template_by_id, template_page
-from .schemas import TemplateDetailResponse, TemplatePage
+from .schemas import TemplateAccountUpdate, TemplateDetailResponse, TemplatePage, TemplateResponse
 from .serializers import template_email_example, template_response
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -38,3 +39,18 @@ def get_template(
         **template_response(template).model_dump(),
         example=template_email_example(example) if example is not None else None,
     )
+
+
+@router.put("/{template_id}/account", response_model=TemplateResponse)
+def update_template_account(template_id: int, payload: TemplateAccountUpdate) -> TemplateResponse:
+    try:
+        template_accounts.set_template_account(template_id, payload.account_id)
+    except template_accounts.TemplateNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except template_accounts.AccountNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    template = template_by_id(template_id)
+    if template is None:  # pragma: no cover - protected by the atomic update above
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template_response(template)

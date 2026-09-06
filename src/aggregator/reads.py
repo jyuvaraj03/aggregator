@@ -69,6 +69,7 @@ def transaction_page(page: int) -> Page[TransactionRecord]:
                 TransactionRecord(
                     id=transaction.id,
                     email_id=transaction.email_id,
+                    account_id=transaction.account_id,
                     amount=cast(Decimal | None, transaction.amount),
                     currency_code=transaction.currency_code,
                     payee=transaction.payee,
@@ -85,7 +86,12 @@ def transaction_page(page: int) -> Page[TransactionRecord]:
 
 
 def _template_record(template: Template) -> TemplateRecord:
-    return TemplateRecord(template.id, template.text, int(vars(template)["email_count"]))
+    return TemplateRecord(
+        template.id,
+        template.text,
+        int(vars(template)["email_count"]),
+        template.account_id,
+    )
 
 
 def template_page(page: int) -> Page[TemplateRecord]:

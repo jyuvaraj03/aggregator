@@ -242,8 +242,8 @@ def test_template_counts_and_missing_resource(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["total"] == 2
     assert response.json()["items"] == [
-        {"id": second.id, "text": "second", "email_count": 0},
-        {"id": first.id, "text": "first", "email_count": 2},
+        {"id": second.id, "text": "second", "email_count": 0, "account_id": None},
+        {"id": first.id, "text": "first", "email_count": 2, "account_id": None},
     ]
     assert client.get("/templates/999").status_code == 404
 
@@ -261,6 +261,7 @@ def test_template_detail_includes_earliest_email_as_example(client: TestClient) 
         "id": template.id,
         "text": "receipt",
         "email_count": 2,
+        "account_id": None,
         "example": {
             "id": 2,
             "message_id": "message-1",
@@ -272,6 +273,111 @@ def test_template_detail_includes_earliest_email_as_example(client: TestClient) 
         },
     }
     assert client.get(f"/templates/{empty_template.id}").json()["example"] is None
+
+
+def test_template_account_assignment_reassignment_and_unassignment(client: TestClient) -> None:
+    first_account = Account.create(name="Checking")
+    second_account = Account.create(name="Savings")
+    selected = Template.create(text="selected")
+    untouched = Template.create(text="untouched")
+    selected_transactions = [
+        Transaction.create(email=_email(index, template=selected)) for index in range(2)
+    ]
+    untouched_transaction = Transaction.create(email=_email(3, template=untouched))
+
+    assigned = client.put(
+        f"/templates/{selected.id}/account", json={"account_id": first_account.id}
+    )
+
+    assert assigned.status_code == 200
+    assert assigned.json() == {
+        "id": selected.id,
+        "text": "selected",
+        "email_count": 2,
+        "account_id": first_account.id,
+    }
+    assert Template.get_by_id(selected.id).account_id == first_account.id
+    assert {
+        Transaction.get_by_id(transaction.id).account_id for transaction in selected_transactions
+    } == {first_account.id}
+    assert Template.get_by_id(untouched.id).account_id is None
+    assert Transaction.get_by_id(untouched_transaction.id).account_id is None
+
+    assert (
+        client.put(
+            f"/templates/{selected.id}/account", json={"account_id": first_account.id}
+        ).status_code
+        == 200
+    )
+    reassigned = client.put(
+        f"/templates/{selected.id}/account", json={"account_id": second_account.id}
+    )
+    assert reassigned.json()["account_id"] == second_account.id
+    assert {
+        Transaction.get_by_id(transaction.id).account_id for transaction in selected_transactions
+    } == {second_account.id}
+
+    unassigned = client.put(f"/templates/{selected.id}/account", json={"account_id": None})
+    assert unassigned.status_code == 200
+    assert unassigned.json()["account_id"] is None
+    assert all(
+        Transaction.get_by_id(transaction.id).account_id is None
+        for transaction in selected_transactions
+    )
+
+
+def test_template_account_assignment_validates_before_updating(client: TestClient) -> None:
+    account = Account.create(name="Checking")
+    template = Template.create(text="receipt", account=account)
+    transaction = Transaction.create(email=_email(1, template=template), account=account)
+
+    missing_account = client.put(f"/templates/{template.id}/account", json={"account_id": 999})
+    missing_template = client.put("/templates/999/account", json={"account_id": account.id})
+
+    assert missing_account.status_code == 404
+    assert missing_account.json() == {"detail": "Account not found"}
+    assert missing_template.status_code == 404
+    assert missing_template.json() == {"detail": "Template not found"}
+    assert Template.get_by_id(template.id).account_id == account.id
+    assert Transaction.get_by_id(transaction.id).account_id == account.id
+    for payload in ({}, {"account_id": "1"}, {"account_id": True}, {"extra": None}):
+        assert client.put(f"/templates/{template.id}/account", json=payload).status_code == 422
+
+
+def test_account_deletion_cascades_transactions_and_preserves_templates(
+    client: TestClient,
+) -> None:
+    deleted_account = Account.create(name="Deleted")
+    other_account = Account.create(name="Other")
+    deleted_template = Template.create(text="receipt", account=deleted_account)
+    other_template = Template.create(text="other", account=other_account)
+    deleted_email = _email(1, template=deleted_template)
+    other_email = _email(2, template=other_template)
+    deleted_transaction = Transaction.create(email=deleted_email, account=deleted_account)
+    other_transaction = Transaction.create(email=other_email, account=other_account)
+
+    response = client.delete(f"/accounts/{deleted_account.id}")
+
+    assert response.status_code == 204
+    assert Template.get_by_id(deleted_template.id).account_id is None
+    assert Template.get_by_id(other_template.id).account_id == other_account.id
+    assert Transaction.get_or_none(Transaction.id == deleted_transaction.id) is None
+    assert Transaction.get_by_id(other_transaction.id).account_id == other_account.id
+
+    parser_response = client.put(
+        f"/templates/{deleted_template.id}/field-parsers",
+        json={
+            **{name: {"rule": "missing"} for name in TRANSACTION_FIELD_NAMES},
+            "amount": {"rule": "constant", "constant_value": "10"},
+        },
+    )
+    assert parser_response.status_code == 200
+    assert client.post("/transaction-extraction").json()["created"] == 0
+    client.put(f"/templates/{deleted_template.id}/account", json={"account_id": other_account.id})
+    extraction = client.post("/transaction-extraction")
+    assert extraction.json()["created"] == 1
+    recreated = Transaction.get(Transaction.email == deleted_email)
+    assert recreated.account_id == other_account.id
 
 
 def test_email_representation_shapes_for_index_and_detail(client: TestClient) -> None:
@@ -543,6 +649,7 @@ def test_transaction_pagination_fields_and_email_representation(client: TestClie
     assert set(payload["items"][0]) == {
         "id",
         "email_id",
+        "account_id",
         "amount",
         "currency_code",
         "payee",
@@ -561,6 +668,7 @@ def test_transaction_pagination_fields_and_email_representation(client: TestClie
             {
                 "id": represented_transaction.id,
                 "email_id": represented_email.id,
+                "account_id": None,
                 "amount": "19.00",
                 "currency_code": "USD",
                 "payee": "Example Shop",

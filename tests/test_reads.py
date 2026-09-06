@@ -20,7 +20,7 @@ from aggregator.field_parsers import (
     generate_and_replace_field_parsers,
     replace_field_parsers,
 )
-from aggregator.models import Email, FieldParser, Template, Transaction
+from aggregator.models import Account, Email, FieldParser, Template, Transaction
 from aggregator.parser_configuration import (
     TRANSACTION_FIELD_NAMES,
     ConstantFieldParser,
@@ -71,6 +71,13 @@ def _parsers() -> FieldParserSet:
             "amount": {"rule": "extracted", "parameter_indices": [0]},
         }
     )
+
+
+def _assign_account(template: Template) -> None:
+    account = Account.get_or_none(Account.name == "Checking")
+    if account is None:
+        account = Account.create(name="Checking")
+    Template.update(account=account).where(Template.id == template.id).execute()
 
 
 def test_serializers_use_only_detached_prepared_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,6 +156,9 @@ def test_assignment_preview_and_extraction_share_body_selection(
     assert assignment.processed == 3
     assert assignment.skipped == 1
     template = reads.template_page(1).items[0]
+    with database_connection():
+        persisted_template = Template.get_by_id(template.id)
+        _assign_account(persisted_template)
     snapshot = replace_field_parsers(template.id, _parsers())
     assert snapshot.preview is not None
     assert snapshot.preview["amount"] == expected
@@ -265,6 +275,7 @@ def test_generation_uses_earliest_email_after_releasing_connection(
 def test_generation_failure_preserves_existing_parsers(monkeypatch: pytest.MonkeyPatch) -> None:
     with database_connection():
         template = Template.create(text="Paid <NUMBER>")
+        _assign_account(template)
         _email(1, template)
     original = replace_field_parsers(template.id, _parsers())
 
@@ -298,6 +309,7 @@ def test_missing_template_does_not_invoke_generation(monkeypatch: pytest.MonkeyP
 def test_read_failure_closes_operation_owned_connection() -> None:
     with database_connection():
         template = Template.create(text="Paid <NUMBER>")
+        _assign_account(template)
         email = _email(1, template)
         FieldParser.insert(
             template=template, field_name="amount", rule="extracted", parameter_indices=[2]
@@ -310,6 +322,7 @@ def test_read_failure_closes_operation_owned_connection() -> None:
 def test_extraction_skips_incomplete_configuration_before_validation() -> None:
     with database_connection():
         template = Template.create(text="Paid <NUMBER>")
+        _assign_account(template)
         _email(1, template)
         FieldParser.insert(
             template=template, field_name="amount", rule="extracted", parameter_indices=[2]
@@ -325,6 +338,7 @@ def test_extraction_skips_incomplete_configuration_before_validation() -> None:
 def test_extraction_records_invalid_complete_configuration_as_failure() -> None:
     with database_connection():
         template = Template.create(text="Paid <NUMBER>")
+        _assign_account(template)
         email = _email(1, template)
     replace_field_parsers(template.id, _parsers())
     with database_connection():
@@ -385,6 +399,7 @@ def test_extraction_loads_parser_configuration_once_per_template(
 
     with database_connection():
         template = Template.create(text="Paid <NUMBER>")
+        _assign_account(template)
         for index in range(4):
             _email(index, template)
     replace_field_parsers(template.id, _parsers())

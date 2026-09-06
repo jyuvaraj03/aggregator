@@ -136,6 +136,9 @@ def extract_transactions() -> TransactionExtractionResult:
         failed_emails = 0
         for template_id, emails in grouped.items():
             template = Template.get_by_id(template_id)
+            if template.account_id is None:
+                skipped += len(emails)
+                continue
             if template.transaction_extraction_status == TransactionExtractionStatus.FAILED.value:
                 skipped += len(emails)
                 continue
@@ -153,7 +156,11 @@ def extract_transactions() -> TransactionExtractionResult:
                         template.text, readable_body(email.body_html, email.body_text), parsers
                     )
                     values.append(
-                        {"email": email, **_transaction_values(representation.resolved_fields)}
+                        {
+                            "email": email,
+                            "account": template.account_id,
+                            **_transaction_values(representation.resolved_fields),
+                        }
                     )
             except (IndexError, ValueError) as error:
                 failure = f"email {email.id}: {error}"

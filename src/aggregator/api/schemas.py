@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from ..parser_configuration import FieldParserSet
 
@@ -84,6 +84,13 @@ class TemplateResponse(BaseModel):
     id: int
     text: str
     email_count: int
+    account_id: int | None
+
+
+class TemplateAccountUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: StrictInt | None
 
 
 class TemplateDetailResponse(TemplateResponse):
@@ -101,6 +108,7 @@ class EmailPage(BaseModel):
 class TransactionResponse(BaseModel):
     id: int
     email_id: int
+    account_id: int | None
     amount: Decimal | None
     currency_code: str | None
     payee: str | None

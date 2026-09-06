@@ -101,6 +101,10 @@ class Template(Model):
     text = TextField()
     transaction_extraction_status = CharField(default=TransactionExtractionStatus.PENDING.value)
     transaction_extraction_error = TextField(null=True)
+    account = ForeignKeyField(Account, null=True, backref="templates", on_delete="SET NULL")
+
+    if TYPE_CHECKING:
+        account_id: int | None
 
     class Meta:
         database = database
@@ -170,9 +174,11 @@ class Transaction(Model):
     transaction_date = DateField(null=True)
     account_hint = TextField(null=True)
     is_credit = BooleanField(null=True)
+    account = ForeignKeyField(Account, null=True, backref="transactions", on_delete="CASCADE")
 
     if TYPE_CHECKING:
         email_id: int
+        account_id: int | None
 
     class Meta:
         database = database

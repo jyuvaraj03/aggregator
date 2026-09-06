@@ -1,0 +1,17 @@
+meta {
+  name: Assign Account
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{baseUrl}}/templates/1/account
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "account_id": 1
+  }
+}

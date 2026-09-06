@@ -1,0 +1,17 @@
+meta {
+  name: Unassign Account
+  type: http
+  seq: 9
+}
+
+put {
+  url: {{baseUrl}}/templates/1/account
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "account_id": null
+  }
+}

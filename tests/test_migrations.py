@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -90,6 +91,53 @@ def test_account_migration_adds_unique_storage_and_rolls_back(tmp_path: Path) ->
         database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Checking",))
     database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("checking",))
 
-    runner.down()
+    runner.down("0007_create_accounts")
 
     assert "accounts" not in database.get_tables()
+
+
+def test_account_association_migration_constraints_and_downgrade(tmp_path: Path) -> None:
+    database = SqliteDatabase(str(tmp_path / "migration.sqlite3"), pragmas={"foreign_keys": 1})
+    runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
+    runner.up("0007_create_accounts")
+    database.execute_sql(
+        "INSERT INTO templates (text, transaction_extraction_status) VALUES (?, ?)",
+        ("Paid <NUMBER>", "pending"),
+    )
+    database.execute_sql(
+        """INSERT INTO emails
+           (message_id, received_at, sender, headers, template_id)
+           VALUES (?, ?, ?, ?, ?)""",
+        ("message-1", "2026-09-01", "sender@example.com", "{}", 1),
+    )
+    database.execute_sql("INSERT INTO transactions (email_id) VALUES (?)", (1,))
+
+    runner.up()
+
+    assert database.execute_sql("SELECT account_id FROM templates").fetchone() == (None,)
+    assert database.execute_sql("SELECT account_id FROM transactions").fetchone() == (None,)
+    template_foreign_keys = cast(
+        list[tuple[object, ...]],
+        database.execute_sql("PRAGMA foreign_key_list(templates)").fetchall(),
+    )
+    transaction_foreign_keys = cast(
+        list[tuple[object, ...]],
+        database.execute_sql("PRAGMA foreign_key_list(transactions)").fetchall(),
+    )
+    template_fk = next(row for row in template_foreign_keys if row[2] == "accounts")
+    transaction_fk = next(row for row in transaction_foreign_keys if row[2] == "accounts")
+    assert template_fk[2:7] == ("accounts", "account_id", "id", "NO ACTION", "SET NULL")
+    assert transaction_fk[2:7] == ("accounts", "account_id", "id", "NO ACTION", "CASCADE")
+
+    database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Checking",))
+    database.execute_sql("UPDATE templates SET account_id = 1")
+    database.execute_sql("UPDATE transactions SET account_id = 1")
+    database.execute_sql("DELETE FROM accounts WHERE id = 1")
+    assert database.execute_sql("SELECT account_id FROM templates").fetchone() == (None,)
+    assert database.execute_sql("SELECT COUNT(*) FROM transactions").fetchone() == (0,)
+
+    runner.down()
+
+    assert "account_id" not in {column.name for column in database.get_columns("templates")}
+    assert "account_id" not in {column.name for column in database.get_columns("transactions")}
+    assert "accounts" in database.get_tables()

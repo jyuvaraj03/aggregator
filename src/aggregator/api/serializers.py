@@ -87,6 +87,7 @@ def template_response(template: TemplateRecord) -> TemplateResponse:
         id=template.id,
         text=template.text,
         email_count=template.email_count,
+        account_id=template.account_id,
     )
 
 
@@ -94,6 +95,7 @@ def transaction_response(transaction: TransactionRecord) -> TransactionResponse:
     return TransactionResponse(
         id=transaction.id,
         email_id=transaction.email_id,
+        account_id=transaction.account_id,
         amount=transaction.amount,
         currency_code=transaction.currency_code,
         payee=transaction.payee,
