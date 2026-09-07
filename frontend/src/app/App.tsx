@@ -1,12 +1,23 @@
 import { useEffect } from "react";
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { EmailsScreen } from "../features/emails/EmailsScreen";
 import { EmailDetailScreen } from "../features/emails/EmailDetailScreen";
+import { TemplatesScreen } from "../features/templates/TemplatesScreen";
+import { TemplateDetailScreen } from "../features/templates/TemplateDetailScreen";
 
 export function App() {
     const { pathname } = useLocation();
     useEffect(() => {
-        document.title = `${pathname.startsWith("/emails/") ? "Email detail" : "Emails"} · Aggregator`;
+        const title = pathname.startsWith("/emails/")
+            ? "Email detail"
+            : pathname.startsWith("/templates/")
+              ? "Template detail"
+              : pathname === "/templates"
+                ? "Templates"
+                : pathname === "/emails" || pathname === "/"
+                  ? "Emails"
+                  : "Page not found";
+        document.title = `${title} · Aggregator`;
         document.getElementById("main")?.focus();
     }, [pathname]);
     return (
@@ -19,7 +30,10 @@ export function App() {
                     <Link className="brand" to="/emails">
                         Aggregator
                     </Link>
-                    <span>Local email workspace</span>
+                    <nav className="app-nav" aria-label="Main navigation">
+                        <NavLink to="/emails">Emails</NavLink>
+                        <NavLink to="/templates">Templates</NavLink>
+                    </nav>
                 </div>
             </header>
             <main id="main" tabIndex={-1}>
@@ -27,6 +41,8 @@ export function App() {
                     <Route path="/" element={<Navigate to="/emails" replace />} />
                     <Route path="/emails" element={<EmailsScreen />} />
                     <Route path="/emails/:emailId" element={<EmailDetailScreen />} />
+                    <Route path="/templates" element={<TemplatesScreen />} />
+                    <Route path="/templates/:templateId" element={<TemplateDetailScreen />} />
                     <Route
                         path="*"
                         element={

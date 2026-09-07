@@ -2,11 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../lib/api/client";
 import { emailDetailOptions } from "./queries";
-import { ErrorState, readPage, ReceivedTime } from "./shared";
+import { ErrorState, readPage, ReceivedTime } from "../../components/shared";
+import { templateOrigin } from "../templates/navigation";
 
 export function EmailDetailScreen() {
     const { emailId } = useParams();
     const [search] = useSearchParams();
+    const origin = templateOrigin(search);
     const id = Number(emailId);
     const validId = Number.isSafeInteger(id) && id > 0;
     const email = useQuery({ ...emailDetailOptions(id), enabled: validId });
@@ -14,8 +16,11 @@ export function EmailDetailScreen() {
 
     return (
         <>
-            <Link className="back-link" to={`/emails?page=${readPage(search.get("page"))}`}>
-                Back to emails
+            <Link
+                className="back-link"
+                to={origin?.href ?? `/emails?page=${readPage(search.get("page"))}`}
+            >
+                {origin ? "Back to template" : "Back to emails"}
             </Link>
             {missing ? (
                 <div className="state">
@@ -46,6 +51,24 @@ export function EmailDetailScreen() {
                                 <dt>Received</dt>
                                 <dd>
                                     <ReceivedTime value={email.data.received_at} />
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Template</dt>
+                                <dd>
+                                    {email.data.template_id === null ? (
+                                        "No template assigned"
+                                    ) : (
+                                        <Link
+                                            to={
+                                                origin?.id === email.data.template_id
+                                                    ? origin.href
+                                                    : `/templates/${email.data.template_id}`
+                                            }
+                                        >
+                                            Template {email.data.template_id}
+                                        </Link>
+                                    )}
                                 </dd>
                             </div>
                         </dl>

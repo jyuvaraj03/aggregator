@@ -4,12 +4,12 @@ import type { components } from "../../lib/api/schema";
 
 export const emailKeys = { all: ["emails"] as const };
 
-export function emailPageOptions(page: number) {
+export function emailPageOptions(page: number, templateId?: number) {
     return queryOptions({
-        queryKey: [...emailKeys.all, "list", page],
+        queryKey: [...emailKeys.all, "list", page, templateId ?? "all"],
         queryFn: async ({ signal }) => {
             const { data, error, response } = await api.GET("/emails", {
-                params: { query: { page } },
+                params: { query: { page, template_id: templateId } },
                 signal,
             });
             if (!data) throw apiError(response.status, error);

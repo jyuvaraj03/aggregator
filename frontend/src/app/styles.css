@@ -86,9 +86,28 @@ button.secondary:hover:not(:disabled) {
     text-decoration: none;
     letter-spacing: -0.03em;
 }
-.app-header span {
-    font-size: 13px;
+.app-nav {
+    display: flex;
+    gap: 8px;
+}
+.app-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
     color: var(--muted);
+}
+.app-nav a:hover,
+.app-nav a.active {
+    background: #edf2eb;
+    color: var(--accent);
+}
+.app-nav a.active {
+    text-decoration: underline;
 }
 main {
     max-width: 1120px;
@@ -172,6 +191,55 @@ input::placeholder {
 .success {
     color: #245d48;
     animation: reveal 0.3s ease-out;
+}
+.extraction-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 28px;
+}
+.extraction-controls p {
+    max-width: 65ch;
+}
+.extraction-controls button {
+    flex-shrink: 0;
+}
+.result-note {
+    display: block;
+    margin-top: 8px;
+}
+.template-name {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.template-preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
+}
+.template-section {
+    margin-top: 32px;
+}
+.template-pattern {
+    margin: 16px 0 0;
+    padding: clamp(20px, 4vw, 32px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fff;
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.template-example,
+.example-empty {
+    margin-top: 16px;
 }
 .error,
 .error p {
@@ -333,8 +401,17 @@ dd {
     .app-header-inner {
         padding: 20px;
     }
-    .app-header span {
-        font-size: 11px;
+    .app-header-inner {
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .app-nav a {
+        padding-inline: 10px;
+    }
+    .extraction-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 20px;
     }
     main {
         padding: 32px 20px 48px;
@@ -355,6 +432,9 @@ dd {
         flex-basis: 100%;
     }
     .email-row time {
+        flex: 1;
+    }
+    .template-row .total {
         flex: 1;
     }
     .email-list {

@@ -32,5 +32,5 @@ export function apiError(status: number, error: unknown): ApiError {
 export function errorMessage(error: Error): string {
     return error instanceof ApiError
         ? error.message
-        : "Could not reach the email API. Check that the backend is running, then try again.";
+        : "Could not reach the Aggregator API. Check that the backend is running, then try again.";
 }

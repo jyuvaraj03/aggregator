@@ -1,4 +1,32 @@
-import { errorMessage } from "../../lib/api/client";
+import { errorMessage } from "../lib/api/client";
+
+export function Pagination({
+    page,
+    totalPages,
+    label,
+    onPage,
+}: {
+    page: number;
+    totalPages: number;
+    label: string;
+    onPage: (page: number) => void;
+}) {
+    return (
+        <nav className="pagination" aria-label={label}>
+            <button className="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+                Previous
+            </button>
+            <span>{totalPages > 0 ? `Page ${page} of ${totalPages}` : "Page 1"}</span>
+            <button
+                className="secondary"
+                disabled={page >= totalPages}
+                onClick={() => onPage(page + 1)}
+            >
+                Next
+            </button>
+        </nav>
+    );
+}
 
 export function readPage(value: string | null): number {
     const page = Number(value);

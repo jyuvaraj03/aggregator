@@ -46,6 +46,11 @@ reports pulled, inserted, and already-stored counts, and lets the user browse
 stored emails and inspect their bodies as plain text. Pagination survives detail
 navigation, and received times use the browser's locale and timezone.
 
+The Templates tab extracts patterns from all stored emails without a template and
+reports processed, skipped, and newly created template counts. The user can browse
+templates, inspect each pattern and example email, and open matching emails while
+retaining list pagination. Template inspection is read-only.
+
 Local operation describes the existing implementation; a permanent local-only
 deployment requirement has not been established.
 
@@ -53,7 +58,8 @@ deployment requirement has not been established.
 
 ### Existing implementation
 
-- The web interface provides email sync, paginated browsing, and email detail.
+- The web interface provides email sync, paginated browsing, email detail,
+  template extraction, and template inspection with paginated matching emails.
 - Backend APIs support template assignment and inspection, account management,
   template-to-account assignment, parser generation and replacement, transaction
   extraction, and transaction listing.

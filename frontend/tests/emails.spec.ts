@@ -131,7 +131,7 @@ test("list loading, connection error, retry and empty states", async ({ page }) 
     await page.goto("/emails");
     await expect(page.getByRole("status")).toHaveText("Loading emails…");
     release();
-    await expect(page.getByRole("alert")).toContainText("Could not reach the email API");
+    await expect(page.getByRole("alert")).toContainText("Could not reach the Aggregator API");
     await page.route("**/api/emails?*", (route) => route.fulfill({ json: emailPage(1, [], 0) }));
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "No emails stored yet" })).toBeVisible();

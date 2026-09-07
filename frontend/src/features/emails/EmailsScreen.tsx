@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { errorMessage } from "../../lib/api/client";
 import { emailKeys, emailPageOptions, syncEmails } from "./queries";
-import { ErrorState, readPage, ReceivedTime } from "./shared";
+import { ErrorState, Pagination, readPage } from "../../components/shared";
+import { EmailRows } from "../../components/EmailRows";
 
 export function EmailsScreen() {
     const [search, setSearch] = useSearchParams();
@@ -88,6 +89,9 @@ export function EmailsScreen() {
                     <p className="success sync-message" role="status">
                         <strong>Sync complete.</strong> {sync.data.pulled} pulled ·{" "}
                         {sync.data.inserted} inserted · {sync.data.already_stored} already stored
+                        <span className="result-note">
+                            <Link to="/templates">Go to templates to extract patterns</Link>
+                        </span>
                     </p>
                 )}
             </section>
@@ -121,33 +125,10 @@ export function EmailsScreen() {
                 {emails.data && (
                     <>
                         {emails.data.items.length ? (
-                            <ul className="messages">
-                                {emails.data.items.map((email) => (
-                                    <li key={email.id}>
-                                        <Link
-                                            className="email-row"
-                                            to={`/emails/${email.id}?page=${page}`}
-                                        >
-                                            <span className="email-copy">
-                                                <span className="sender">
-                                                    {email.sender || "Unknown sender"}
-                                                </span>
-                                                <span className="subject">
-                                                    {email.subject || "(No subject)"}
-                                                </span>
-                                            </span>
-                                            <ReceivedTime value={email.received_at} />
-                                            <svg
-                                                className="chevron"
-                                                viewBox="0 0 24 24"
-                                                aria-hidden="true"
-                                            >
-                                                <path d="m9 5 7 7-7 7" />
-                                            </svg>
-                                        </Link>
-                                    </li>
-                                ))}
-                            </ul>
+                            <EmailRows
+                                emails={emails.data.items}
+                                href={(id) => `/emails/${id}?page=${page}`}
+                            />
                         ) : (
                             <div className="state">
                                 <h3>
@@ -163,27 +144,12 @@ export function EmailsScreen() {
                                 {page > 1 && <Link to="/emails?page=1">Go to first page</Link>}
                             </div>
                         )}
-                        <nav className="pagination" aria-label="Email pages">
-                            <button
-                                className="secondary"
-                                disabled={page <= 1}
-                                onClick={() => setSearch({ page: String(page - 1) })}
-                            >
-                                Previous
-                            </button>
-                            <span>
-                                {emails.data.total_pages > 0
-                                    ? `Page ${page} of ${emails.data.total_pages}`
-                                    : "Page 1"}
-                            </span>
-                            <button
-                                className="secondary"
-                                disabled={page >= emails.data.total_pages}
-                                onClick={() => setSearch({ page: String(page + 1) })}
-                            >
-                                Next
-                            </button>
-                        </nav>
+                        <Pagination
+                            page={page}
+                            totalPages={emails.data.total_pages}
+                            label="Email pages"
+                            onPage={(next) => setSearch({ page: String(next) })}
+                        />
                     </>
                 )}
             </section>

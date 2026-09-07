@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-07T08:04:34Z",
+  "title": "Design System: Aggregator",
+  "extensions": {
+    "motion": [
+      {
+        "name": "success-reveal",
+        "value": "reveal 0.3s ease-out",
+        "purpose": "Success messages reveal from clip-path inset(0 0 100% 0) to inset(0); disabled under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Sync and template extraction actions.",
+      "html": "<button class=\"ds-primary\">Extract templates</button>",
+      "css": ".ds-primary { font-family: 'Public Sans Variable', sans-serif; font-size: 16px; min-height: 44px; padding: 11px 20px; border: 1px solid transparent; border-radius: 6px; background: var(--accent, #245d48); color: white; font-weight: 600; cursor: pointer; } .ds-primary:hover:not(:disabled) { background: #194734; } .ds-primary:disabled { opacity: 0.5; cursor: not-allowed; } .ds-primary:focus-visible { outline: 3px solid #367b64; outline-offset: 4px; }"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Pagination and retry actions.",
+      "html": "<button class=\"ds-secondary\">Next</button>",
+      "css": ".ds-secondary { font-family: 'Public Sans Variable', sans-serif; font-size: 16px; min-height: 44px; padding: 11px 20px; border: 1px solid var(--line, #d9dfd8); border-radius: 6px; background: white; color: #273e32; font-weight: 600; cursor: pointer; } .ds-secondary:hover:not(:disabled) { background: #edf2eb; } .ds-secondary:disabled { opacity: 0.5; cursor: not-allowed; } .ds-secondary:focus-visible { outline: 3px solid #367b64; outline-offset: 4px; }"
+    },
+    {
+      "name": "Labeled input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Sync form field with a visible label.",
+      "html": "<label class=\"ds-label\" for=\"ds-label-input\">Gmail label</label><input class=\"ds-input\" id=\"ds-label-input\" placeholder=\"Label name\">",
+      "css": ".ds-label { display: block; font-family: 'Public Sans Variable', sans-serif; color: #202b27; font-weight: 600; font-size: 13px; margin-bottom: 9px; } .ds-input { font-family: 'Public Sans Variable', sans-serif; font-size: 16px; width: 100%; min-height: 44px; min-width: 0; border: 1px solid #a8b4aa; border-radius: 5px; padding: 10px 12px; background: #fff; color: #202b27; } .ds-input::placeholder { color: #626c65; } .ds-input:focus-visible { outline: 3px solid #367b64; outline-offset: 4px; }"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "description": "Header links with an underlined active destination.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a href=\"/emails\">Emails</a><a href=\"/templates\" aria-current=\"page\">Templates</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 8px; font-family: 'Public Sans Variable', sans-serif; } .ds-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 14px; border-radius: 6px; text-decoration: none; text-underline-offset: 4px; font-size: 14px; font-weight: 600; color: var(--muted, #59645e); } .ds-nav a:hover, .ds-nav a[aria-current='page'] { background: #edf2eb; color: var(--accent, #245d48); } .ds-nav a[aria-current='page'] { text-decoration: underline; } .ds-nav a:hover { text-decoration-thickness: 2px; } .ds-nav a:focus-visible { outline: 3px solid #367b64; outline-offset: 4px; } @media (max-width: 640px) { .ds-nav a { padding-inline: 10px; } }"
+    },
+    {
+      "name": "Action panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Bordered white container for sync and extraction controls.",
+      "html": "<section class=\"ds-panel\"><h2>Extract templates</h2><p>Process all stored emails without a template.</p></section>",
+      "css": ".ds-panel { font-family: 'Public Sans Variable', sans-serif; color: #202b27; padding: 26px 28px; border: 1px solid var(--line, #d9dfd8); border-radius: 12px; background: #fff; } .ds-panel h2 { margin: 0; font-size: 19px; letter-spacing: -0.02em; font-weight: 650; } .ds-panel p { margin: 7px 0 0; font-size: 14px; line-height: 1.6; color: var(--muted, #59645e); } @media (max-width: 640px) { .ds-panel { padding: 22px 20px; } }"
+    },
+    {
+      "name": "Template row",
+      "kind": "custom",
+      "description": "Whole-row link with a two-line pattern preview, count, and chevron.",
+      "html": "<a class=\"ds-row\" href=\"/templates/1\"><span class=\"ds-copy\"><span class=\"ds-name\">Template 1</span><span class=\"ds-preview\">Your transaction details</span></span><span class=\"ds-total\">3 emails</span><svg class=\"ds-chevron\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\" /></svg></a>",
+      "css": ".ds-row { display: flex; align-items: center; gap: 24px; padding: 22px 8px; border-bottom: 1px solid var(--line, #d9dfd8); text-decoration: none; color: #202b27; font-family: 'Public Sans Variable', sans-serif; font-size: 16px; } .ds-row:hover { background: #edf1e9; } .ds-row:focus-visible { outline: 3px solid #367b64; outline-offset: 4px; } .ds-copy { flex: 1; min-width: 0; } .ds-name { display: block; font-weight: 600; margin-bottom: 8px; } .ds-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; color: var(--muted, #59645e); font-size: 14px; line-height: 1.6; } .ds-total { color: var(--muted, #59645e); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; } .ds-chevron { width: 16px; height: 16px; fill: none; stroke: var(--muted, #59645e); stroke-width: 1.5; flex-shrink: 0; } @media (max-width: 640px) { .ds-row { flex-wrap: wrap; gap: 10px; padding: 20px 0; } .ds-copy { flex-basis: 100%; } .ds-total { flex: 1; } }"
+    }
+  ]
+}
