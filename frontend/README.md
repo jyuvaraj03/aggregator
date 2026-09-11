@@ -22,8 +22,9 @@ Open http://127.0.0.1:5173. Vite forwards `/api/*` to
 deployment packaging are outside this slice. `npm run preview` only previews the
 built assets and does not provide an API proxy.
 
-The list includes all stored emails in the server's order. Syncing resets the list
-to page one and reports the API's pulled, inserted, and already-stored counts.
+The list includes all stored emails in the server's order. Syncing uses the server's
+configured Gmail label, resets the list to page one, and reports the job's pulled,
+inserted, and already-stored counts.
 Pagination lives in `?page=` and is retained in detail/back links. Received times
 use the browser's locale and timezone. Email bodies are rendered as plain text.
 

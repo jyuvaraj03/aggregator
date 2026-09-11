@@ -83,8 +83,22 @@ test("extracts once, shows exact counts, resets pagination and refreshes email a
         expect(route.request().postData()).toBeNull();
         await gate;
         extracted = true;
-        await route.fulfill({ json: { processed: 4, skipped: 2, templates_created: 1 } });
+        await route.fulfill({
+            status: 202,
+            json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
+        });
     });
+    await page.route("**/api/jobs/extraction-job", (route) =>
+        route.fulfill({
+            json: {
+                job_id: "extraction-job",
+                action: "aggregator.template_assignment",
+                status: "succeeded",
+                result: { processed: 4, skipped: 2, templates_created: 1 },
+                error: null,
+            },
+        }),
+    );
     await page.goto("/emails/12");
     await expect(page.getByText("No template assigned")).toBeVisible();
     await page
@@ -121,9 +135,23 @@ test("extraction failure supports manual retry and an empty run", async ({ page 
         return route.fulfill(
             calls === 1
                 ? { status: 503, json: { detail: "Extraction is unavailable. Try again." } }
-                : { json: { processed: 0, skipped: 0, templates_created: 0 } },
+                : {
+                      status: 202,
+                      json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
+                  },
         );
     });
+    await page.route("**/api/jobs/extraction-job", (route) =>
+        route.fulfill({
+            json: {
+                job_id: "extraction-job",
+                action: "aggregator.template_assignment",
+                status: "succeeded",
+                result: { processed: 0, skipped: 0, templates_created: 0 },
+                error: null,
+            },
+        }),
+    );
     await page.goto("/templates");
     await expect(page.getByRole("heading", { name: "No templates yet" })).toBeVisible();
     await page.getByRole("button", { name: "Extract templates", exact: true }).click();
@@ -147,8 +175,22 @@ test("successful extraction remains visible when the list refresh fails", async 
     );
     await page.route("**/api/email-template-assignment", (route) => {
         extracted = true;
-        return route.fulfill({ json: { processed: 2, skipped: 0, templates_created: 1 } });
+        return route.fulfill({
+            status: 202,
+            json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
+        });
     });
+    await page.route("**/api/jobs/extraction-job", (route) =>
+        route.fulfill({
+            json: {
+                job_id: "extraction-job",
+                action: "aggregator.template_assignment",
+                status: "succeeded",
+                result: { processed: 2, skipped: 0, templates_created: 1 },
+                error: null,
+            },
+        }),
+    );
     await page.goto("/templates");
     await expect(page.getByRole("link", { name: /Template 7/ })).toBeVisible();
     await page.getByRole("button", { name: "Extract templates", exact: true }).click();
@@ -327,8 +369,22 @@ test("navigating during extraction does not redirect and prevents a second run",
     await page.route("**/api/email-template-assignment", async (route) => {
         calls++;
         await gate;
-        await route.fulfill({ json: { processed: 1, skipped: 0, templates_created: 0 } });
+        await route.fulfill({
+            status: 202,
+            json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
+        });
     });
+    await page.route("**/api/jobs/extraction-job", (route) =>
+        route.fulfill({
+            json: {
+                job_id: "extraction-job",
+                action: "aggregator.template_assignment",
+                status: "succeeded",
+                result: { processed: 1, skipped: 0, templates_created: 0 },
+                error: null,
+            },
+        }),
+    );
     await page.goto("/templates?page=2");
     await page.getByRole("button", { name: "Extract templates", exact: true }).click();
     await page

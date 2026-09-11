@@ -16,18 +16,18 @@ from aggregator.transaction_extraction import TransactionExtractionResult
 def test_sync_task_serializes_operation_result(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
-    def sync(label: str, from_date: date) -> SyncResult:
-        captured.update(label=label, from_date=from_date)
+    def sync(from_date: date) -> SyncResult:
+        captured.update(from_date=from_date)
         return SyncResult(pulled=3, inserted=2, already_stored=1)
 
     monkeypatch.setattr(background_tasks, "sync_messages", sync)
 
-    assert background_tasks.sync_email_task.run("Receipts", "2026-09-01") == {
+    assert background_tasks.sync_email_task.run("2026-09-01") == {
         "pulled": 3,
         "inserted": 2,
         "already_stored": 1,
     }
-    assert captured == {"label": "Receipts", "from_date": date(2026, 9, 1)}
+    assert captured == {"from_date": date(2026, 9, 1)}
 
 
 def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch) -> None:

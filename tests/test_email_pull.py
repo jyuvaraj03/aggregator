@@ -4,6 +4,7 @@ import base64
 import json
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 
@@ -62,11 +63,13 @@ class FakeSession:
 
 
 def test_pull_messages_paginates_and_normalizes(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     session = FakeSession()
+    monkeypatch.setenv("GMAIL_LABEL", " Transactions ")
+    monkeypatch.setattr(email_pull, "DOTENV_PATH", tmp_path / ".env")
     monkeypatch.setattr(email_pull, "_authorized_session", lambda: session)
-    messages = email_pull.pull_messages("Transactions", date(2024, 1, 1))
+    messages = email_pull.pull_messages(date(2024, 1, 1))
 
     assert [message.message_id for message in messages] == ["one", "two"]
     assert messages[0].received_at == datetime(2024, 1, 1, tzinfo=UTC)
@@ -77,6 +80,19 @@ def test_pull_messages_paginates_and_normalizes(
     assert session.closed
 
 
-def test_pull_messages_rejects_invalid_label() -> None:
-    with pytest.raises(email_pull.InvalidInputError):
-        email_pull.pull_messages("", date(2024, 1, 1))
+@pytest.mark.parametrize("label", [None, "", "   "])
+def test_pull_messages_rejects_missing_or_blank_configured_label(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, label: str | None
+) -> None:
+    if label is None:
+        monkeypatch.delenv("GMAIL_LABEL", raising=False)
+    else:
+        monkeypatch.setenv("GMAIL_LABEL", label)
+    monkeypatch.setattr(email_pull, "DOTENV_PATH", tmp_path / ".env")
+    monkeypatch.setattr(
+        email_pull,
+        "_authorized_session",
+        lambda: pytest.fail("configuration must fail before contacting Gmail"),
+    )
+    with pytest.raises(email_pull.ConfigurationError, match="GMAIL_LABEL"):
+        email_pull.pull_messages(date(2024, 1, 1))

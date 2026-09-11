@@ -36,7 +36,7 @@ def _submitted(task: object, response: Response) -> BackgroundJobResponse:
 )
 def sync_email(request: EmailSyncRequest, response: Response) -> BackgroundJobResponse:
     try:
-        job = sync_email_task.delay(request.label, request.from_date.isoformat())
+        job = sync_email_task.delay(request.from_date.isoformat())
     except Exception as error:
         raise HTTPException(status_code=503, detail="Background queue is unavailable") from error
     status_url = f"/jobs/{job.id}"

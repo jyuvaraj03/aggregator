@@ -224,6 +224,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -257,6 +274,31 @@ export interface components {
         AccountUpdate: {
             /** Name */
             name: string;
+        };
+        /** BackgroundJobResponse */
+        BackgroundJobResponse: {
+            /** Job Id */
+            job_id: string;
+            /** Status Url */
+            status_url: string;
+        };
+        /** BackgroundJobStatusResponse */
+        BackgroundJobStatusResponse: {
+            /** Job Id */
+            job_id: string;
+            /** Action */
+            action: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "retrying" | "succeeded" | "failed";
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
         };
         /** ConstantFieldParser */
         ConstantFieldParser: {
@@ -337,8 +379,6 @@ export interface components {
         };
         /** EmailSyncRequest */
         EmailSyncRequest: {
-            /** Label */
-            label: string;
             /**
              * From Date
              * Format: date
@@ -456,28 +496,10 @@ export interface components {
             /** Is Credit */
             is_credit?: string | null;
         };
-        /** SyncResponse */
-        SyncResponse: {
-            /** Pulled */
-            pulled: number;
-            /** Inserted */
-            inserted: number;
-            /** Already Stored */
-            already_stored: number;
-        };
         /** TemplateAccountUpdate */
         TemplateAccountUpdate: {
             /** Account Id */
             account_id: number | null;
-        };
-        /** TemplateAssignmentResponse */
-        TemplateAssignmentResponse: {
-            /** Processed */
-            processed: number;
-            /** Skipped */
-            skipped: number;
-            /** Templates Created */
-            templates_created: number;
         };
         /** TemplateDetailResponse */
         TemplateDetailResponse: {
@@ -554,19 +576,6 @@ export interface components {
             email_count: number;
             /** Account Id */
             account_id: number | null;
-        };
-        /** TransactionExtractionResponse */
-        TransactionExtractionResponse: {
-            /** Pending */
-            pending: number;
-            /** Created */
-            created: number;
-            /** Skipped */
-            skipped: number;
-            /** Failed Templates */
-            failed_templates: number;
-            /** Failed Emails */
-            failed_emails: number;
         };
         /** TransactionPage */
         TransactionPage: {
@@ -1024,12 +1033,12 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TemplateFieldParsersResponse"];
+                    "application/json": components["schemas"]["BackgroundJobResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1057,12 +1066,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SyncResponse"];
+                    "application/json": components["schemas"]["BackgroundJobResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1086,12 +1095,12 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TemplateAssignmentResponse"];
+                    "application/json": components["schemas"]["BackgroundJobResponse"];
                 };
             };
         };
@@ -1106,12 +1115,12 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TransactionExtractionResponse"];
+                    "application/json": components["schemas"]["BackgroundJobResponse"];
                 };
             };
         };
@@ -1134,6 +1143,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackgroundJobStatusResponse"];
                 };
             };
             /** @description Validation Error */

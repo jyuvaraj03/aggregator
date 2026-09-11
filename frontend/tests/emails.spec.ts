@@ -20,7 +20,6 @@ const emailPage = (page = 1, items = [message], total = 51) => ({
 });
 
 async function fillSync(page: Page) {
-    await page.getByLabel("Gmail label").fill("Receipts");
     await page.getByLabel("Start date").fill("2026-09-01");
 }
 
@@ -45,12 +44,25 @@ test("sync blocks duplicates, shows exact counts and refreshes page one", async 
     await page.route("**/api/email-sync", async (route) => {
         calls++;
         expect(route.request().postDataJSON()).toEqual({
-            label: "Receipts",
             from_date: "2026-09-01",
         });
         await gate;
         synced = true;
-        await route.fulfill({ json: { pulled: 7, inserted: 3, already_stored: 4 } });
+        await route.fulfill({
+            status: 202,
+            json: { job_id: "sync-job", status_url: "/jobs/sync-job" },
+        });
+    });
+    await page.route("**/api/jobs/sync-job", async (route) => {
+        await route.fulfill({
+            json: {
+                job_id: "sync-job",
+                action: "aggregator.email_sync",
+                status: "succeeded",
+                result: { pulled: 7, inserted: 3, already_stored: 4 },
+                error: null,
+            },
+        });
     });
     await page.goto("/emails?page=1");
     await expect(page.getByText("Previously stored receipt")).toBeVisible();
@@ -59,7 +71,7 @@ test("sync blocks duplicates, shows exact counts and refreshes page one", async 
     await fillSync(page);
     await page.getByRole("button", { name: "Sync emails", exact: true }).click();
     await expect(page.getByRole("button", { name: "Syncing…" })).toBeDisabled();
-    await expect(page.getByLabel("Gmail label")).toBeDisabled();
+    await expect(page.getByLabel("Gmail label")).toHaveCount(0);
     release();
     await expect(page.getByRole("status")).toContainText(
         "7 pulled · 3 inserted · 4 already stored",
@@ -78,14 +90,28 @@ test("sync failure preserves inputs and permits a successful retry", async ({ pa
         return route.fulfill(
             attempts === 1
                 ? { status: 503, json: { detail: "Gmail credentials are unavailable" } }
-                : { json: { pulled: 0, inserted: 0, already_stored: 0 } },
+                : {
+                      status: 202,
+                      json: { job_id: "sync-job", status_url: "/jobs/sync-job" },
+                  },
         );
     });
+    await page.route("**/api/jobs/sync-job", (route) =>
+        route.fulfill({
+            json: {
+                job_id: "sync-job",
+                action: "aggregator.email_sync",
+                status: "succeeded",
+                result: { pulled: 0, inserted: 0, already_stored: 0 },
+                error: null,
+            },
+        }),
+    );
     await page.goto("/emails");
     await fillSync(page);
     await page.getByRole("button", { name: "Sync emails", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Gmail credentials are unavailable");
-    await expect(page.getByLabel("Gmail label")).toHaveValue("Receipts");
+    await expect(page.getByLabel("Gmail label")).toHaveCount(0);
     await expect(page.getByLabel("Start date")).toHaveValue("2026-09-01");
     await page.getByRole("button", { name: "Sync emails", exact: true }).click();
     await expect(page.getByRole("status")).toContainText(

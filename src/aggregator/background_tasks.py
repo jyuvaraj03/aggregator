@@ -8,13 +8,19 @@ from __future__ import annotations
 from datetime import date
 
 from .celery_app import celery_app
-from .email_pull import CredentialsError, InvalidInputError
+from .email_pull import ConfigurationError, CredentialsError, InvalidInputError
 from .email_sync import sync_messages
 from .field_parsers import FieldParserGenerationError, generate_and_replace_field_parsers
 from .template_assignment import assign_email_templates
 from .transaction_extraction import extract_transactions
 
-_PERMANENT_ERRORS = (CredentialsError, FieldParserGenerationError, InvalidInputError, ValueError)
+_PERMANENT_ERRORS = (
+    ConfigurationError,
+    CredentialsError,
+    FieldParserGenerationError,
+    InvalidInputError,
+    ValueError,
+)
 
 
 def _retryable(task: object, error: Exception) -> None:
@@ -24,9 +30,9 @@ def _retryable(task: object, error: Exception) -> None:
 
 
 @celery_app.task(bind=True, name="aggregator.email_sync", max_retries=2)
-def sync_email_task(self: object, label: str, from_date: str) -> dict[str, int]:
+def sync_email_task(self: object, from_date: str) -> dict[str, int]:
     try:
-        result = sync_messages(label, date.fromisoformat(from_date))
+        result = sync_messages(date.fromisoformat(from_date))
         return {
             "pulled": result.pulled,
             "inserted": result.inserted,

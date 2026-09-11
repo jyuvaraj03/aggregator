@@ -12,16 +12,14 @@ from .email_pull import pull_messages
 from .models import Email, Template
 
 
-def pull_test(label: str | None = None, from_date: date | None = None):
-    label = label or "Transactions"
+def pull_test(from_date: date | None = None):
     from_date = from_date or date.today() - timedelta(days=1)
-    return pull_messages(label, from_date)
+    return pull_messages(from_date)
 
 
-def sync_test(label: str | None = None, from_date: date | None = None):
-    label = label or "Transactions"
+def sync_test(from_date: date | None = None):
     from_date = from_date or date.today() - timedelta(days=1)
-    return sync_messages(label, from_date)
+    return sync_messages(from_date)
 
 
 def get_last_email() -> Email | None:

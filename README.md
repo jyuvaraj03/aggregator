@@ -151,12 +151,15 @@ credential files.
 
 This configuration is intended for a local personal Gmail account.
 
+Set `GMAIL_LABEL` in `.env` before syncing. It is required and names the single Gmail label
+that Aggregator reads; surrounding whitespace is ignored.
+
 ## Development
 
 ### Local email frontend
 
-The React application in [`frontend/`](frontend/README.md) lets you sync a Gmail
-label and inspect all stored emails. Start `uv run aggregator-api`, then run
+The React application in [`frontend/`](frontend/README.md) lets you choose a sync start
+date and inspect all stored emails. Start `uv run aggregator-api`, then run
 `npm ci` and `npm run dev` from `frontend/`. Open http://127.0.0.1:5173.
 See the frontend README for API type generation and browser test commands.
 

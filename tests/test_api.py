@@ -708,24 +708,24 @@ def test_actions_enqueue_background_jobs(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def sync(label: str, from_date: str) -> _QueuedJob:
-        captured.update(label=label, from_date=from_date)
+    def sync(from_date: str) -> _QueuedJob:
+        captured.update(from_date=from_date)
         return _QueuedJob("submitted-sync")
 
     monkeypatch.setattr(actions.sync_email_task, "delay", sync)
 
-    sync_response = client.post(
-        "/email-sync", json={"label": "Receipts", "from_date": "2026-09-01"}
-    )
+    sync_response = client.post("/email-sync", json={"from_date": "2026-09-01"})
     assert sync_response.status_code == 202
     assert sync_response.headers["location"] == "/jobs/submitted-sync"
     assert sync_response.json() == {
         "job_id": "submitted-sync",
         "status_url": "/jobs/submitted-sync",
     }
-    assert captured["label"] == "Receipts"
     assert captured["from_date"] == "2026-09-01"
-    assert client.post("/email-sync", json={"label": "Receipts"}).status_code == 422
+    assert client.post("/email-sync", json={}).status_code == 422
+    sync_schema = app.openapi()["components"]["schemas"]["EmailSyncRequest"]
+    assert "label" not in sync_schema["properties"]
+    assert set(sync_schema["required"]) == {"from_date"}
     assert client.post("/email-template-assignment").json()["job_id"] == "assignment-job"
     assert client.post("/transaction-extraction").json()["job_id"] == "extraction-job"
 
@@ -733,7 +733,5 @@ def test_actions_enqueue_background_jobs(
         raise RuntimeError("queue unavailable")
 
     monkeypatch.setattr(actions.sync_email_task, "delay", unavailable)
-    unavailable_response = client.post(
-        "/email-sync", json={"label": "Receipts", "from_date": "2026-09-01"}
-    )
+    unavailable_response = client.post("/email-sync", json={"from_date": "2026-09-01"})
     assert unavailable_response.status_code == 503

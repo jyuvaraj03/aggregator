@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
 
 import google.auth
+from dotenv import load_dotenv
 from google.auth.credentials import Credentials
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.auth.transport.requests import AuthorizedSession
@@ -22,6 +25,7 @@ from requests.exceptions import RequestException
 
 GMAIL_MESSAGES_URL = "https://www.googleapis.com/gmail/v1/users/me/messages"
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
 
 class EmailPullError(Exception):
@@ -30,6 +34,10 @@ class EmailPullError(Exception):
 
 class InvalidInputError(EmailPullError):
     """Raised when a public function argument is invalid."""
+
+
+class ConfigurationError(EmailPullError):
+    """Raised when required local Gmail configuration is missing."""
 
 
 class CredentialsError(EmailPullError):
@@ -59,10 +67,9 @@ class EmailMessage:
     authentication_status: str | None
 
 
-def pull_messages(label: str, from_date: date | datetime) -> list[EmailMessage]:
-    """Fetch all Gmail messages with ``label`` received on or after ``from_date``."""
-    if not label.strip():
-        raise InvalidInputError("label must be a non-empty string")
+def pull_messages(from_date: date | datetime) -> list[EmailMessage]:
+    """Fetch configured-label Gmail messages received on or after ``from_date``."""
+    label = _gmail_label()
 
     session = _authorized_session()
     try:
@@ -72,6 +79,15 @@ def pull_messages(label: str, from_date: date | datetime) -> list[EmailMessage]:
         ]
     finally:
         session.close()
+
+
+def _gmail_label() -> str:
+    """Return the required Gmail label from the repository's local environment."""
+    load_dotenv(dotenv_path=DOTENV_PATH)
+    label = os.environ.get("GMAIL_LABEL", "").strip()
+    if not label:
+        raise ConfigurationError("GMAIL_LABEL must be configured with a non-empty Gmail label")
+    return label
 
 
 def _authorized_session() -> AuthorizedSession:

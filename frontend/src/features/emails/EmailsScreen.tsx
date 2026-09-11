@@ -11,7 +11,6 @@ export function EmailsScreen() {
     const page = readPage(search.get("page"));
     const emails = useQuery(emailPageOptions(page));
     const client = useQueryClient();
-    const [label, setLabel] = useState("");
     const [fromDate, setFromDate] = useState("");
     const submitting = useRef(false);
     const sync = useMutation({
@@ -35,15 +34,15 @@ export function EmailsScreen() {
             <section className="sync-panel" aria-labelledby="sync-heading">
                 <div>
                     <h2 id="sync-heading">Sync emails</h2>
-                    <p>Pull messages from a Gmail label, starting on a date.</p>
+                    <p>Pull messages from your configured Gmail label, starting on a date.</p>
                 </div>
                 <form
                     onSubmit={async (event) => {
                         event.preventDefault();
-                        if (submitting.current || !label.trim() || !fromDate) return;
+                        if (submitting.current || !fromDate) return;
                         submitting.current = true;
                         try {
-                            await sync.mutateAsync({ label: label.trim(), from_date: fromDate });
+                            await sync.mutateAsync({ from_date: fromDate });
                         } catch {
                             /* The mutation error is rendered below; retain the user's inputs. */
                         } finally {
@@ -51,17 +50,6 @@ export function EmailsScreen() {
                         }
                     }}
                 >
-                    <div className="field">
-                        <label htmlFor="label">Gmail label</label>
-                        <input
-                            id="label"
-                            required
-                            value={label}
-                            placeholder="e.g. Receipts"
-                            disabled={sync.isPending}
-                            onChange={(event) => setLabel(event.target.value)}
-                        />
-                    </div>
                     <div className="field">
                         <label htmlFor="from-date">Start date</label>
                         <input
@@ -73,7 +61,7 @@ export function EmailsScreen() {
                             onChange={(event) => setFromDate(event.target.value)}
                         />
                     </div>
-                    <button type="submit" disabled={sync.isPending || !label.trim() || !fromDate}>
+                    <button type="submit" disabled={sync.isPending || !fromDate}>
                         {sync.isPending ? "Syncing…" : "Sync emails"}
                     </button>
                 </form>
@@ -138,7 +126,7 @@ export function EmailsScreen() {
                                 </h3>
                                 <p>
                                     {emails.data.total === 0
-                                        ? "Choose a label and start date above, then sync your emails."
+                                        ? "Choose a start date above, then sync your emails."
                                         : "Return to the first page to browse stored emails."}
                                 </p>
                                 {page > 1 && <Link to="/emails?page=1">Go to first page</Link>}

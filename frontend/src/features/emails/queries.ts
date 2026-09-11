@@ -1,6 +1,12 @@
 import { queryOptions } from "@tanstack/react-query";
-import { api, apiError } from "../../lib/api/client";
+import { api, apiError, waitForJob } from "../../lib/api/client";
 import type { components } from "../../lib/api/schema";
+
+export type SyncResult = {
+    pulled: number;
+    inserted: number;
+    already_stored: number;
+};
 
 export const emailKeys = { all: ["emails"] as const };
 
@@ -32,8 +38,25 @@ export function emailDetailOptions(id: number) {
     });
 }
 
-export async function syncEmails(body: components["schemas"]["EmailSyncRequest"]) {
-    const { data, error, response } = await api.POST("/email-sync", { body });
-    if (!data) throw apiError(response.status, error);
-    return data;
+export async function syncEmails(
+    body: components["schemas"]["EmailSyncRequest"],
+): Promise<SyncResult> {
+    const {
+        data: submitted,
+        error: submitError,
+        response: submitResponse,
+    } = await api.POST("/email-sync", { body });
+    if (!submitted) throw apiError(submitResponse.status, submitError);
+
+    return waitForJob(submitted.job_id, isSyncResult);
+}
+
+function isSyncResult(value: object | null | undefined): value is SyncResult {
+    const result = value as Record<string, unknown> | null;
+    return (
+        result !== null &&
+        typeof result.pulled === "number" &&
+        typeof result.inserted === "number" &&
+        typeof result.already_stored === "number"
+    );
 }

@@ -52,9 +52,9 @@ def _message(message_id: str = "message-1") -> EmailMessage:
 
 def test_sync_stores_all_normalized_email_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     message = _message()
-    monkeypatch.setattr(email_sync, "pull_messages", lambda _label, _date: [message])
+    monkeypatch.setattr(email_sync, "pull_messages", lambda _date: [message])
 
-    result = email_sync.sync_messages("Transactions", date(2024, 1, 1))
+    result = email_sync.sync_messages(date(2024, 1, 1))
 
     stored = email_sync.Email.get()
     assert result == email_sync.SyncResult(pulled=1, inserted=1, already_stored=0)
@@ -71,10 +71,10 @@ def test_sync_stores_all_normalized_email_fields(monkeypatch: pytest.MonkeyPatch
 
 def test_sync_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     message = _message()
-    monkeypatch.setattr(email_sync, "pull_messages", lambda _label, _date: [message])
+    monkeypatch.setattr(email_sync, "pull_messages", lambda _date: [message])
 
-    email_sync.sync_messages("Transactions", date(2024, 1, 1))
-    result = email_sync.sync_messages("Transactions", date(2024, 1, 1))
+    email_sync.sync_messages(date(2024, 1, 1))
+    result = email_sync.sync_messages(date(2024, 1, 1))
 
     assert email_sync.Email.select().count() == 1
     assert result == email_sync.SyncResult(pulled=1, inserted=0, already_stored=1)
@@ -84,9 +84,9 @@ def test_sync_persists_multiple_messages_and_counts_batch_duplicates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     messages = [_message("message-1"), _message("message-2"), _message("message-1")]
-    monkeypatch.setattr(email_sync, "pull_messages", lambda _label, _date: messages)
+    monkeypatch.setattr(email_sync, "pull_messages", lambda _date: messages)
 
-    result = email_sync.sync_messages("Transactions", date(2024, 1, 1))
+    result = email_sync.sync_messages(date(2024, 1, 1))
 
     assert email_sync.Email.select().count() == 2
     assert result == email_sync.SyncResult(pulled=3, inserted=2, already_stored=1)
@@ -96,7 +96,7 @@ def test_sync_rolls_back_the_entire_batch_when_a_write_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     messages = [_message("message-1"), _message("message-2")]
-    monkeypatch.setattr(email_sync, "pull_messages", lambda _label, _date: messages)
+    monkeypatch.setattr(email_sync, "pull_messages", lambda _date: messages)
     original_create = email_sync.Email.create
     calls = 0
 
@@ -110,6 +110,6 @@ def test_sync_rolls_back_the_entire_batch_when_a_write_fails(
     monkeypatch.setattr(email_sync.Email, "create", fail_second_create)
 
     with pytest.raises(RuntimeError, match="database write failed"):
-        email_sync.sync_messages("Transactions", date(2024, 1, 1))
+        email_sync.sync_messages(date(2024, 1, 1))
 
     assert email_sync.Email.select().count() == 0

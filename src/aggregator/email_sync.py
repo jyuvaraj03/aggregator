@@ -21,13 +21,13 @@ class SyncResult:
     already_stored: int
 
 
-def sync_messages(label: str, from_date: date | datetime) -> SyncResult:
+def sync_messages(from_date: date | datetime) -> SyncResult:
     """Pull and persist Gmail messages, leaving existing snapshots untouched.
 
     The complete batch is written in one transaction.  A message ID found either
     in the database or earlier in this batch is counted as already stored.
     """
-    messages = pull_messages(label, from_date)
+    messages = pull_messages(from_date)
 
     with database_connection():
         with database.atomic():

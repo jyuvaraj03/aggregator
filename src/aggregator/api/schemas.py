@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt
 
 from ..parser_configuration import FieldParserSet
 
@@ -157,14 +157,7 @@ class TemplatePage(BaseModel):
 
 
 class EmailSyncRequest(BaseModel):
-    label: str = Field(min_length=1)
     from_date: date
-
-
-class SyncResponse(BaseModel):
-    pulled: int
-    inserted: int
-    already_stored: int
 
 
 class TemplateAssignmentResponse(BaseModel):
