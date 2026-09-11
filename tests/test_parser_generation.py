@@ -160,7 +160,7 @@ def test_mistral_provider_uses_api_key_and_retries_with_same_model(
     result = parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE)
 
     assert result.model_dump() == parser_data
-    constructor.assert_called_once_with(model_name="mistral-large-latest")
+    constructor.assert_called_once_with(model_name="codestral-2508")
     model.with_structured_output.assert_called_once_with(
         _workflow.GeneratedFieldParsers, method="json_schema"
     )
@@ -354,6 +354,7 @@ def test_provider_failure_propagates_without_correction(monkeypatch: pytest.Monk
     failure = ConnectionError("Ollama unavailable")
     invoke = constructor.return_value.with_structured_output.return_value.invoke
     invoke.side_effect = failure
+    monkeypatch.setenv("PARSER_GENERATION_PROVIDER", "ollama")
     monkeypatch.setattr(_workflow, "ChatOpenAI", constructor)
     with pytest.raises(ConnectionError) as caught:
         parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE)

@@ -52,7 +52,7 @@ For Ollama, install and run `deepseek-r1` (`ollama pull deepseek-r1`) and set
 requires a nonempty key, which the local endpoint ignores (see
 [Ollama's compatibility documentation](https://docs.ollama.com/api/openai-compatibility)).
 
-For Mistral, set the following values. The workflow uses `mistral-large-latest`.
+For Mistral, set the following values. The workflow uses `codestral-2508`.
 
 ```dotenv
 PARSER_GENERATION_PROVIDER=mistral
