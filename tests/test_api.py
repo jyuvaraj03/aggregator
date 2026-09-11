@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # Peewee and its migration helper are dynamically typed.
-# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownMemberType=false
+# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false
 from collections.abc import Generator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -13,15 +13,33 @@ from playhouse.migrations import Runner
 
 from aggregator import field_parsers
 from aggregator.api import actions
+from aggregator.api import field_parsers as field_parser_routes
 from aggregator.api.app import app
 from aggregator.api.parameter_serialization import indexed_parameter_responses
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
-from aggregator.email_pull import CredentialsError, GmailRequestError
-from aggregator.email_sync import SyncResult
 from aggregator.models import Account, Email, FieldParser, Template, Transaction
 from aggregator.parser_configuration import TRANSACTION_FIELD_NAMES, FieldParserSet
-from aggregator.template_assignment import TemplateAssignmentResult
-from aggregator.transaction_extraction import TransactionExtractionResult
+
+
+class _QueuedJob:
+    def __init__(self, job_id: str = "job-123") -> None:
+        self.id = job_id
+
+
+@pytest.fixture(autouse=True)
+def queue_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions.sync_email_task, "delay", lambda *_: _QueuedJob("sync-job"))
+    monkeypatch.setattr(
+        actions.assign_email_templates_task, "delay", lambda: _QueuedJob("assignment-job")
+    )
+    monkeypatch.setattr(
+        actions.extract_transactions_task, "delay", lambda: _QueuedJob("extraction-job")
+    )
+    monkeypatch.setattr(
+        field_parser_routes.generate_field_parsers_task,
+        "delay",
+        lambda _: _QueuedJob("generation-job"),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -372,12 +390,10 @@ def test_account_deletion_cascades_transactions_and_preserves_templates(
         },
     )
     assert parser_response.status_code == 200
-    assert client.post("/transaction-extraction").json()["created"] == 0
+    assert client.post("/transaction-extraction").status_code == 202
     client.put(f"/templates/{deleted_template.id}/account", json={"account_id": other_account.id})
-    extraction = client.post("/transaction-extraction")
-    assert extraction.json()["created"] == 1
-    recreated = Transaction.get(Transaction.email == deleted_email)
-    assert recreated.account_id == other_account.id
+    assert client.post("/transaction-extraction").status_code == 202
+    assert Transaction.get_or_none(Transaction.email == deleted_email) is None
 
 
 def test_email_representation_shapes_for_index_and_detail(client: TestClient) -> None:
@@ -535,17 +551,10 @@ def test_generate_field_parsers_endpoint_replaces_and_previews(
 
     response = client.post(f"/templates/{template.id}/field-parsers/generate")
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["parsers"] == {
-        **dict.fromkeys(TRANSACTION_FIELD_NAMES),
-        "amount": {"rule": "extracted", "parameter_indices": [1]},
-        "currency_code": {"rule": "extracted", "parameter_indices": [0]},
-    }
-    assert payload["preview"]["amount"] == "19"
-    assert payload["preview"]["currency_code"] == "$"
-    assert payload["transaction_extraction_status"] == "pending"
-    assert payload["transaction_extraction_error"] is None
+    assert response.status_code == 202
+    assert response.headers["location"] == "/jobs/generation-job"
+    assert response.json() == {"job_id": "generation-job", "status_url": "/jobs/generation-job"}
+    assert FieldParser.get(FieldParser.template == template).constant_value == "Old Shop"
 
 
 def test_generate_field_parsers_endpoint_failures(
@@ -571,15 +580,14 @@ def test_generate_field_parsers_endpoint_failures(
     failed = client.post(f"/templates/{template.id}/field-parsers/generate")
     missing = client.post("/templates/999/field-parsers/generate")
 
-    assert failed.status_code == 502
-    assert failed.json() == {"detail": "Field parser generation failed"}
+    assert failed.status_code == 202
     assert client.get(f"/templates/{template.id}/field-parsers").json()["parsers"]["payee"] == {
         "rule": "constant",
         "constant_value": "Old Shop",
     }
     assert missing.status_code == 404
     assert missing.json() == {"detail": "Template not found"}
-    assert calls == 1
+    assert calls == 0
 
 
 def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient) -> None:
@@ -695,70 +703,37 @@ def test_transaction_pagination_fields_and_email_representation(client: TestClie
     assert client.get("/transactions?page=0").status_code == 422
 
 
-def test_actions_validate_delegate_and_map_gmail_errors(
+def test_actions_enqueue_background_jobs(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: dict[str, object] = {}
 
-    def sync(label: str, from_date: object) -> SyncResult:
+    def sync(label: str, from_date: str) -> _QueuedJob:
         captured.update(label=label, from_date=from_date)
-        return SyncResult(pulled=3, inserted=2, already_stored=1)
+        return _QueuedJob("submitted-sync")
 
-    monkeypatch.setattr(actions, "sync_messages", sync)
-    monkeypatch.setattr(
-        actions,
-        "assign_email_templates",
-        lambda: TemplateAssignmentResult(processed=4, skipped=1, templates_created=1),
-    )
-    monkeypatch.setattr(
-        actions,
-        "extract_transactions",
-        lambda: TransactionExtractionResult(
-            pending=8,
-            created=4,
-            skipped=1,
-            failed_templates=1,
-            failed_emails=3,
-        ),
-    )
+    monkeypatch.setattr(actions.sync_email_task, "delay", sync)
 
     sync_response = client.post(
         "/email-sync", json={"label": "Receipts", "from_date": "2026-09-01"}
     )
+    assert sync_response.status_code == 202
+    assert sync_response.headers["location"] == "/jobs/submitted-sync"
     assert sync_response.json() == {
-        "pulled": 3,
-        "inserted": 2,
-        "already_stored": 1,
+        "job_id": "submitted-sync",
+        "status_url": "/jobs/submitted-sync",
     }
     assert captured["label"] == "Receipts"
+    assert captured["from_date"] == "2026-09-01"
     assert client.post("/email-sync", json={"label": "Receipts"}).status_code == 422
-    assert client.post("/email-template-assignment").json() == {
-        "processed": 4,
-        "skipped": 1,
-        "templates_created": 1,
-    }
-    assert client.post("/transaction-extraction").json() == {
-        "pending": 8,
-        "created": 4,
-        "skipped": 1,
-        "failed_templates": 1,
-        "failed_emails": 3,
-    }
+    assert client.post("/email-template-assignment").json()["job_id"] == "assignment-job"
+    assert client.post("/transaction-extraction").json()["job_id"] == "extraction-job"
 
-    def unavailable(_: str, __: object) -> SyncResult:
-        raise CredentialsError("credentials unavailable")
+    def unavailable(*_: object) -> _QueuedJob:
+        raise RuntimeError("queue unavailable")
 
-    monkeypatch.setattr(actions, "sync_messages", unavailable)
+    monkeypatch.setattr(actions.sync_email_task, "delay", unavailable)
     unavailable_response = client.post(
         "/email-sync", json={"label": "Receipts", "from_date": "2026-09-01"}
     )
     assert unavailable_response.status_code == 503
-
-    def upstream(_: str, __: object) -> SyncResult:
-        raise GmailRequestError("upstream unavailable")
-
-    monkeypatch.setattr(actions, "sync_messages", upstream)
-    upstream_response = client.post(
-        "/email-sync", json={"label": "Receipts", "from_date": "2026-09-01"}
-    )
-    assert upstream_response.status_code == 502

@@ -17,6 +17,23 @@ Apply the database schema migrations before running a sync:
 uv run pwmigrate up
 ```
 
+## Background actions
+
+Email sync, template assignment, parser generation, and transaction extraction run through
+Celery. Start Redis, then run the API and worker in separate terminals:
+
+```bash
+docker compose up -d redis
+uv run aggregator-api
+uv run aggregator-worker
+```
+
+The action POST endpoints return `202 Accepted` with a `job_id` and `status_url`. Poll
+`GET /jobs/{job_id}` until its status is `succeeded` or `failed`; successful results use
+the action's former response shape. Configure Redis with `AGGREGATOR_REDIS_URL` (default:
+`redis://127.0.0.1:16379/0` when using the included Compose service). Jobs retry transient failures twice and their results expire
+after seven days.
+
 ## Run the example
 
 ```bash

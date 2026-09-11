@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "beautifulsoup4>=4.15.0",
+    "celery[redis]>=5.5.0",
     "drain3>=0.9.11",
     "fastapi>=0.128.0",
     "google-auth[requests]>=2.0",
@@ -26,6 +27,7 @@ dependencies = [
 [project.scripts]
 aggregator = "aggregator.cli:main"
 aggregator-api = "aggregator.api.app:main"
+aggregator-worker = "aggregator.celery_app:worker_main"
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13.0"]

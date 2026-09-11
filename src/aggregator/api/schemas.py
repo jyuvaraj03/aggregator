@@ -179,3 +179,16 @@ class TransactionExtractionResponse(BaseModel):
     skipped: int
     failed_templates: int
     failed_emails: int
+
+
+class BackgroundJobResponse(BaseModel):
+    job_id: str
+    status_url: str
+
+
+class BackgroundJobStatusResponse(BaseModel):
+    job_id: str
+    action: str
+    status: Literal["queued", "running", "retrying", "succeeded", "failed"]
+    result: dict[str, object] | None = None
+    error: str | None = None

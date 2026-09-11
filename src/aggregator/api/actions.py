@@ -1,49 +1,62 @@
 """Synchronous import and template-mining routes."""
 
+# Celery task proxies are untyped.
+# pyright: reportAttributeAccessIssue=false, reportFunctionMemberAccess=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Response, status
 
-from ..email_sync import sync_messages
-from ..template_assignment import assign_email_templates
-from ..transaction_extraction import extract_transactions
+from ..background_tasks import (
+    assign_email_templates_task,
+    extract_transactions_task,
+    sync_email_task,
+)
 from .schemas import (
+    BackgroundJobResponse,
     EmailSyncRequest,
-    SyncResponse,
-    TemplateAssignmentResponse,
-    TransactionExtractionResponse,
 )
 
 router = APIRouter(tags=["actions"])
 
 
-@router.post("/email-sync", response_model=SyncResponse)
-def sync_email(request: EmailSyncRequest) -> SyncResponse:
-    result = sync_messages(request.label, request.from_date)
-    return SyncResponse(
-        pulled=result.pulled,
-        inserted=result.inserted,
-        already_stored=result.already_stored,
-    )
+def _submitted(task: object, response: Response) -> BackgroundJobResponse:
+    try:
+        job = task.delay()
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Background queue is unavailable") from error
+    status_url = f"/jobs/{job.id}"
+    response.status_code = status.HTTP_202_ACCEPTED
+    response.headers["Location"] = status_url
+    return BackgroundJobResponse(job_id=job.id, status_url=status_url)
 
 
-@router.post("/email-template-assignment", response_model=TemplateAssignmentResponse)
-def assign_email_templates_action() -> TemplateAssignmentResponse:
-    result = assign_email_templates()
-    return TemplateAssignmentResponse(
-        processed=result.processed,
-        skipped=result.skipped,
-        templates_created=result.templates_created,
-    )
+@router.post(
+    "/email-sync", response_model=BackgroundJobResponse, status_code=status.HTTP_202_ACCEPTED
+)
+def sync_email(request: EmailSyncRequest, response: Response) -> BackgroundJobResponse:
+    try:
+        job = sync_email_task.delay(request.label, request.from_date.isoformat())
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Background queue is unavailable") from error
+    status_url = f"/jobs/{job.id}"
+    response.headers["Location"] = status_url
+    return BackgroundJobResponse(job_id=job.id, status_url=status_url)
 
 
-@router.post("/transaction-extraction", response_model=TransactionExtractionResponse)
-def extract_transactions_action() -> TransactionExtractionResponse:
-    result = extract_transactions()
-    return TransactionExtractionResponse(
-        pending=result.pending,
-        created=result.created,
-        skipped=result.skipped,
-        failed_templates=result.failed_templates,
-        failed_emails=result.failed_emails,
-    )
+@router.post(
+    "/email-template-assignment",
+    response_model=BackgroundJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def assign_email_templates_action(response: Response) -> BackgroundJobResponse:
+    return _submitted(assign_email_templates_task, response)
+
+
+@router.post(
+    "/transaction-extraction",
+    response_model=BackgroundJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def extract_transactions_action(response: Response) -> BackgroundJobResponse:
+    return _submitted(extract_transactions_task, response)
