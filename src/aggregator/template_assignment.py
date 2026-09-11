@@ -27,9 +27,19 @@ def assign_email_templates() -> TemplateAssignmentResult:
         emails = list(
             Email.select().where(Email.template.is_null()).order_by(Email.received_at, Email.id)
         )
-        result = bulk_mine_templates(
-            MiningRecord(record_id=email.id, text=readable_body(email.body_html, email.body_text))
+        mining_records = (
+            MiningRecord(
+                record_id=email.id,
+                text=readable_body(email.body_html, email.body_text),
+            )
             for email in emails
+        )
+        existing_templates_texts = (
+            template.text for template in Template.select().order_by(Template.id)
+        )
+        result = bulk_mine_templates(
+            mining_records,
+            existing_templates_texts,
         )
         templates_created = _store_and_assign(result.patterns)
 

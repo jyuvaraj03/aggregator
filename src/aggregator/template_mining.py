@@ -94,13 +94,18 @@ def get_extracted_parameters(
     return [ExtractedParameter(parameter.value, parameter.mask_name) for parameter in parameters]
 
 
-def bulk_mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
+def bulk_mine_templates(
+    records: Iterable[MiningRecord], existing_templates: Iterable[str] = ()
+) -> MiningResult:
     """Mine eligible patterns from records without reading or writing persistence.
 
-    Empty or whitespace-only text is skipped. Pattern order follows Drain3's
-    cluster creation order and each pattern's record IDs retain input order.
+    Each non-empty record is first matched against the existing templates in
+    their supplied order. Unmatched records are mined for new patterns. Existing
+    template order is followed by Drain3's cluster creation order, and each
+    pattern's record IDs retain input order.
     """
     miner = _create_miner()
+    record_ids_by_existing_template: dict[str, list[Hashable]] = {}
     record_ids_by_cluster: dict[int, list[Hashable]] = {}
     skipped_record_ids: list[Hashable] = []
     processed = 0
@@ -109,12 +114,35 @@ def bulk_mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
         if not record.text.strip():
             skipped_record_ids.append(record.record_id)
             continue
+        processed += 1
+
+        matching_template = next(
+            (
+                template_text
+                for template_text in existing_templates
+                if miner.extract_parameters(template_text, record.text) is not None
+            ),
+            None,
+        )
+        if matching_template is not None:
+            record_ids_by_existing_template.setdefault(matching_template, []).append(
+                record.record_id
+            )
+            continue
+
         result = miner.add_log_message(record.text)
         cluster_id = int(result["cluster_id"])
         record_ids_by_cluster.setdefault(cluster_id, []).append(record.record_id)
-        processed += 1
 
-    patterns = tuple(
+    existing_patterns = tuple(
+        MinedPattern(
+            text=template_text,
+            record_ids=tuple(record_ids_by_existing_template[template_text]),
+        )
+        for template_text in existing_templates
+        if template_text in record_ids_by_existing_template
+    )
+    mined_patterns = tuple(
         MinedPattern(
             text=cluster.get_template(),
             record_ids=tuple(record_ids_by_cluster[cluster.cluster_id]),
@@ -125,5 +153,5 @@ def bulk_mine_templates(records: Iterable[MiningRecord]) -> MiningResult:
     return MiningResult(
         processed=processed,
         skipped_record_ids=tuple(skipped_record_ids),
-        patterns=patterns,
+        patterns=existing_patterns + mined_patterns,
     )

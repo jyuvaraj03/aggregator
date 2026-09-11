@@ -98,6 +98,27 @@ def test_bulk_mine_templates_excludes_clusters_below_minimum_size() -> None:
     assert result.patterns == ()
 
 
+def test_bulk_mine_templates_picks_existing_templates_before_mining_new_ones() -> None:
+    result = bulk_mine_templates(
+        [
+            MiningRecord("existing", "Order #100 confirmed"),
+            MiningRecord("new-1", "Payment #100 received"),
+            MiningRecord("new-2", "Payment #101 received"),
+            MiningRecord("new-3", "Payment #102 received"),
+        ],
+        ["Order #<NUMBER> confirmed"],
+    )
+
+    assert result == MiningResult(
+        processed=4,
+        skipped_record_ids=(),
+        patterns=(
+            MinedPattern("Order #<NUMBER> confirmed", ("existing",)),
+            MinedPattern("Payment #<NUMBER> received", ("new-1", "new-2", "new-3")),
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -423,12 +444,12 @@ def test_assignment_loads_untagged_html_emails_and_assigns_template() -> None:
 
 def test_assignment_reuses_existing_template_without_counting_it_as_new() -> None:
     existing = Template.create(text="Order #<NUMBER> confirmed")
-    emails = [_email(str(index), f"<p>Order #{index} confirmed</p>") for index in range(3)]
+    email = _email("order", "<p>Order #42 confirmed</p>")
 
     result = assign_email_templates()
 
-    assert result == TemplateAssignmentResult(processed=3, skipped=0, templates_created=0)
-    assert [Email.get_by_id(email.id).template_id for email in emails] == [existing.id] * 3
+    assert result == TemplateAssignmentResult(processed=1, skipped=0, templates_created=0)
+    assert Email.get_by_id(email.id).template_id == existing.id
 
 
 def test_assignment_rolls_back_when_template_creation_fails(
