@@ -73,6 +73,41 @@ def test_bulk_mine_templates_masks_dates_currency_numbers_and_times() -> None:
     )
 
 
+def test_bulk_mine_templates_masks_iso_currency_codes_as_atomic_money() -> None:
+    result = bulk_mine_templates(
+        [
+            MiningRecord(1, "Card used for INR 1,051.73 at MICROSOFT INDIA CYBS SI"),
+            MiningRecord(2, "Card used for MYR 1,050.00 at MICROSOFT INDIA CYBS SI"),
+            MiningRecord(3, "Card used for NZD 99.00 at MICROSOFT INDIA CYBS SI"),
+        ]
+    )
+
+    assert result.patterns == (
+        MinedPattern(
+            "Card used for <CURRENCY_CODE><NUMBER> at MICROSOFT INDIA CYBS SI",
+            (1, 2, 3),
+        ),
+    )
+
+
+def test_atomic_money_does_not_shift_masks_when_following_text_has_different_length() -> None:
+    result = bulk_mine_templates(
+        [
+            MiningRecord(1, "Card used for INR 1.00. Info: ONE TWO THREE FOUR"),
+            MiningRecord(2, "Card used for INR 2.00. Info: FIVE SIX SEVEN EIGHT"),
+            MiningRecord(3, "Card used for INR 3.00. Info: NINE TEN ELEVEN TWELVE"),
+            MiningRecord(4, "Card used for MYR 4.00. Info: ONE TWO THREE"),
+            MiningRecord(5, "Card used for MYR 5.00. Info: FOUR FIVE SIX"),
+            MiningRecord(6, "Card used for MYR 6.00. Info: SEVEN EIGHT NINE"),
+        ]
+    )
+
+    assert result.patterns == (
+        MinedPattern("Card used for <CURRENCY_CODE><NUMBER>. Info: <*> <*> <*> <*>", (1, 2, 3)),
+        MinedPattern("Card used for <CURRENCY_CODE><NUMBER>. Info: <*> <*> <*>", (4, 5, 6)),
+    )
+
+
 def test_bulk_mine_templates_masks_a_ten_digit_number() -> None:
     result = bulk_mine_templates(
         [
@@ -135,7 +170,7 @@ def test_bulk_mine_templates_picks_existing_templates_before_mining_new_ones() -
     ],
 )
 def test_date_masking_regex_matches_supported_date_formats(value: str) -> None:
-    assert MASKING_INSTRUCTIONS[0].regex.fullmatch(value)
+    assert MASKING_INSTRUCTIONS[1].regex.fullmatch(value)
 
 
 @pytest.mark.parametrize(
@@ -143,7 +178,7 @@ def test_date_masking_regex_matches_supported_date_formats(value: str) -> None:
     ["order2026-09-03", "2026-09-03receipt", "2026-9", "Foo 23, 2026", "August 23"],
 )
 def test_date_masking_regex_rejects_invalid_or_embedded_dates(value: str) -> None:
-    assert MASKING_INSTRUCTIONS[0].regex.search(value) is None
+    assert MASKING_INSTRUCTIONS[1].regex.search(value) is None
 
 
 @pytest.mark.parametrize(
@@ -168,7 +203,7 @@ def test_date_masking_regex_rejects_invalid_or_embedded_dates(value: str) -> Non
     ],
 )
 def test_number_masking_regex_matches_supported_number_formats(value: str) -> None:
-    assert MASKING_INSTRUCTIONS[3].regex.fullmatch(value)
+    assert MASKING_INSTRUCTIONS[4].regex.fullmatch(value)
 
 
 @pytest.mark.parametrize(
@@ -196,7 +231,7 @@ def test_number_masking_regex_matches_supported_number_formats(value: str) -> No
     ],
 )
 def test_number_masking_regex_rejects_unsupported_number_formats(value: str) -> None:
-    assert MASKING_INSTRUCTIONS[3].regex.fullmatch(value) is None
+    assert MASKING_INSTRUCTIONS[4].regex.fullmatch(value) is None
 
 
 @pytest.mark.parametrize(
@@ -211,7 +246,7 @@ def test_number_masking_regex_rejects_unsupported_number_formats(value: str) -> 
 def test_number_masking_regex_finds_numbers_between_common_delimiters(
     text: str, expected: list[str]
 ) -> None:
-    assert MASKING_INSTRUCTIONS[3].regex.findall(text) == expected
+    assert MASKING_INSTRUCTIONS[4].regex.findall(text) == expected
 
 
 def test_parameter_extraction_supports_amount_immediately_after_rs_dot() -> None:
@@ -222,6 +257,18 @@ def test_parameter_extraction_supports_amount_immediately_after_rs_dot() -> None
 
     assert [(parameter.value, parameter.mask_name) for parameter in parameters] == [
         ("Rs.", "CURRENCY_CODE"),
+        ("700.00", "NUMBER"),
+    ]
+
+
+def test_parameter_extraction_supports_an_iso_currency_code() -> None:
+    parameters = get_extracted_parameters(
+        MiningRecord("payment", "Payment MYR 700.00"),
+        "Payment <CURRENCY_CODE><NUMBER>",
+    )
+
+    assert [(parameter.value, parameter.mask_name) for parameter in parameters] == [
+        ("MYR", "CURRENCY_CODE"),
         ("700.00", "NUMBER"),
     ]
 
@@ -240,7 +287,7 @@ def test_parameter_extraction_supports_amount_immediately_after_rs_dot() -> None
 def test_number_masking_regex_does_not_match_numbers_embedded_in_words_or_dotted_tokens(
     text: str,
 ) -> None:
-    assert MASKING_INSTRUCTIONS[3].regex.search(text) is None
+    assert MASKING_INSTRUCTIONS[4].regex.search(text) is None
 
 
 @pytest.fixture(autouse=True)

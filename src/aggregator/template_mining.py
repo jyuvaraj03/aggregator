@@ -5,18 +5,50 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 
 from drain3 import TemplateMiner
-from drain3.masking import MaskingInstruction
+from drain3.masking import AbstractMaskingInstruction, MaskingInstruction
 from drain3.template_miner_config import TemplateMinerConfig
+from iso4217 import Currency
 
 MINIMUM_CLUSTER_SIZE = 3
 
+_AMOUNT_BODY_PATTERN = r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.\d+)?"
+_AMOUNT_END_PATTERN = r"(?![\w]|\.\d|,\d)"
+_ISO_CURRENCY_CODES_PATTERN = "|".join(currency.code for currency in Currency)
+_CURRENCY_BODY_PATTERN = (
+    rf"(?:[$€£¥₹]|(?<!\w)(?:(?i:{_ISO_CURRENCY_CODES_PATTERN})|"
+    r"(?i:RS\.?))(?![A-Za-z_]))"
+)
+
+
+class MoneyMaskingInstruction(AbstractMaskingInstruction):
+    """Mask a currency and amount atomically while retaining both parameter types."""
+
+    def __init__(self) -> None:
+        super().__init__("MONEY")
+        self.regex = re.compile(
+            rf"{_CURRENCY_BODY_PATTERN}\s*{_AMOUNT_BODY_PATTERN}{_AMOUNT_END_PATTERN}"
+        )
+
+    @property
+    def pattern(self) -> str:
+        return self.regex.pattern
+
+    def mask(self, content: str, mask_prefix: str, mask_suffix: str) -> str:
+        currency_mask = f"{mask_prefix}CURRENCY_CODE{mask_suffix}"
+        amount_mask = f"{mask_prefix}NUMBER{mask_suffix}"
+        return self.regex.sub(currency_mask + amount_mask, content)
+
+
 # Keep dates and times before generic numbers so their components remain intact.
-# Currency codes are masked separately, leaving their amounts as number masks.
+# Money is masked first so its currency and amount form one Drain3 token. The
+# component masks remain available for exact extraction and standalone values.
 MASKING_INSTRUCTIONS = (
+    MoneyMaskingInstruction(),
     MaskingInstruction(
         r"(?<!\w)(?:"
         r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|"
@@ -34,11 +66,11 @@ MASKING_INSTRUCTIONS = (
         "TIME",
     ),
     MaskingInstruction(
-        r"(?:[$€£¥₹]|(?<!\w)(?:(?i:USD|EUR|GBP|INR|JPY|CAD|AUD)(?!\w)|(?i:RS\.?)(?![A-Za-z_])))\s*",
+        rf"{_CURRENCY_BODY_PATTERN}(?=\s*{_AMOUNT_BODY_PATTERN}{_AMOUNT_END_PATTERN})\s*",
         "CURRENCY_CODE",
     ),
     MaskingInstruction(
-        r"(?:(?<![\w.,])|(?<=(?i:rs\.)))[+-]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.\d+)?(?![\w]|\.\d|,\d)",
+        rf"(?:(?<![\w.,])|(?<=(?i:rs\.))){_AMOUNT_BODY_PATTERN}{_AMOUNT_END_PATTERN}",
         "NUMBER",
     ),
 )
@@ -91,7 +123,13 @@ def get_extracted_parameters(
     """Extract the ordered masked values for a record and a mined template."""
     miner = _create_miner()
     parameters = miner.extract_parameters(template_text, mining_record.text) or []
-    return [ExtractedParameter(parameter.value, parameter.mask_name) for parameter in parameters]
+    return [
+        ExtractedParameter(
+            parameter.value.strip() if parameter.mask_name == "CURRENCY_CODE" else parameter.value,
+            parameter.mask_name,
+        )
+        for parameter in parameters
+    ]
 
 
 def bulk_mine_templates(
@@ -105,6 +143,7 @@ def bulk_mine_templates(
     pattern's record IDs retain input order.
     """
     miner = _create_miner()
+    existing_templates = tuple(existing_templates)
     record_ids_by_existing_template: dict[str, list[Hashable]] = {}
     record_ids_by_cluster: dict[int, list[Hashable]] = {}
     skipped_record_ids: list[Hashable] = []
