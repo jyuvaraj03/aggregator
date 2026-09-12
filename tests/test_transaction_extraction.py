@@ -27,12 +27,15 @@ from aggregator.parser_configuration import (
     MissingFieldParser,
     TransactionFieldName,
 )
+from aggregator.template_representation import TemplateRepresentation
 from aggregator.transaction_extraction import (
+    ExtractedTransaction,
     TransactionExtractionResult,
     _amount,
     _boolean,
     _transaction_date,
-    extract_transactions,
+    extract_transaction,
+    run_transaction_extraction,
 )
 
 
@@ -76,6 +79,50 @@ def _configure(template: Template, **constants: str) -> None:
             rule=(FieldParserRule.CONSTANT if constant is not None else FieldParserRule.MISSING),
             constant_value=constant,
         )
+
+
+def _representation(**fields: str | None) -> TemplateRepresentation:
+    resolved_fields: dict[str, str | None] = dict.fromkeys(
+        field.value for field in TransactionFieldName
+    )
+    resolved_fields.update(fields)
+    return TemplateRepresentation("receipt", (), resolved_fields)
+
+
+def test_extract_transaction_returns_typed_fields_without_persistence() -> None:
+    representation = _representation(
+        amount=" 12,34,567.89 ",
+        currency_code=" INR ",
+        payee=" Example Shop ",
+        description=" Purchase ",
+        transaction_date="23 Aug, 2026",
+        account_hint=" 1234 ",
+        is_credit="FALSE",
+    )
+
+    assert extract_transaction(representation) == ExtractedTransaction(
+        amount=Decimal("1234567.89"),
+        currency_code="INR",
+        payee="Example Shop",
+        description="Purchase",
+        transaction_date=date(2026, 8, 23),
+        account_hint="1234",
+        is_credit=False,
+    )
+    assert Transaction.select().count() == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("amount", "$12.50", "invalid amount"),
+        ("transaction_date", "August 2026", "invalid transaction date"),
+        ("is_credit", "yes", "invalid is_credit"),
+    ],
+)
+def test_extract_transaction_rejects_invalid_fields(field: str, value: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        extract_transaction(_representation(**{field: value}))
 
 
 @pytest.mark.parametrize(
@@ -148,7 +195,7 @@ def test_extraction_persists_typed_transaction_values() -> None:
         is_credit="FALSE",
     )
 
-    result = extract_transactions()
+    result = run_transaction_extraction()
 
     transaction = Transaction.get(Transaction.email == email)
     assert result == TransactionExtractionResult(1, 1, 0, 0, 0)
@@ -183,7 +230,7 @@ def test_extraction_is_template_atomic_and_skips_ineligible_emails() -> None:
     _email(4, incomplete)
     _email(5)
 
-    result = extract_transactions()
+    result = run_transaction_extraction()
 
     assert result == TransactionExtractionResult(5, 1, 2, 1, 2)
     assert Transaction.select().count() == 1
@@ -196,7 +243,7 @@ def test_extraction_is_template_atomic_and_skips_ineligible_emails() -> None:
         Transaction.get_or_none(Transaction.email == email) is None for email in invalid_emails
     )
 
-    repeated = extract_transactions()
+    repeated = run_transaction_extraction()
     assert repeated == TransactionExtractionResult(4, 0, 4, 0, 0)
 
 
@@ -226,18 +273,18 @@ def test_replacing_parsers_clears_a_template_failure_for_retry() -> None:
     refreshed = Template.get_by_id(template.id)
     assert refreshed.transaction_extraction_status == TransactionExtractionStatus.PENDING.value
     assert refreshed.transaction_extraction_error is None
-    assert extract_transactions().created == 1
+    assert run_transaction_extraction().created == 1
 
 
 def test_new_email_for_succeeded_template_remains_eligible() -> None:
     template = Template.create(text="receipt")
     _configure(template, amount="10")
     _email(1, template)
-    assert extract_transactions().created == 1
+    assert run_transaction_extraction().created == 1
 
     _email(2, template)
 
-    assert extract_transactions() == TransactionExtractionResult(1, 1, 0, 0, 0)
+    assert run_transaction_extraction() == TransactionExtractionResult(1, 1, 0, 0, 0)
     assert Transaction.select().count() == 2
 
 
@@ -255,7 +302,7 @@ def test_extraction_skips_unassigned_template_before_parser_or_representation(
     monkeypatch.setattr(transaction_extraction, "parser_sets", unexpected)
     monkeypatch.setattr(transaction_extraction, "represent_email_template", unexpected)
 
-    assert extract_transactions() == TransactionExtractionResult(1, 0, 1, 0, 0)
+    assert run_transaction_extraction() == TransactionExtractionResult(1, 0, 1, 0, 0)
     assert Transaction.select().count() == 0
     refreshed = Template.get_by_id(template.id)
     assert refreshed.transaction_extraction_status == TransactionExtractionStatus.PENDING.value

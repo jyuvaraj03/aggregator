@@ -38,7 +38,7 @@ def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch
     )
     monkeypatch.setattr(
         background_tasks,
-        "extract_transactions",
+        "run_transaction_extraction",
         lambda: TransactionExtractionResult(
             pending=8, created=4, skipped=1, failed_templates=1, failed_emails=2
         ),

@@ -12,7 +12,7 @@ from .email_pull import ConfigurationError, CredentialsError, InvalidInputError
 from .email_sync import sync_messages
 from .field_parsers import FieldParserGenerationError, generate_and_replace_field_parsers
 from .template_assignment import assign_email_templates
-from .transaction_extraction import extract_transactions
+from .transaction_extraction import run_transaction_extraction
 
 _PERMANENT_ERRORS = (
     ConfigurationError,
@@ -82,7 +82,7 @@ def generate_field_parsers_task(self: object, template_id: int) -> dict[str, obj
 @celery_app.task(bind=True, name="aggregator.transaction_extraction", max_retries=2)
 def extract_transactions_task(self: object) -> dict[str, int]:
     try:
-        result = extract_transactions()
+        result = run_transaction_extraction()
         return {
             "pending": result.pending,
             "created": result.created,

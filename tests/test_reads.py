@@ -29,7 +29,7 @@ from aggregator.parser_configuration import (
 )
 from aggregator.queries import TemplateNotFoundError
 from aggregator.template_assignment import assign_email_templates
-from aggregator.transaction_extraction import extract_transactions
+from aggregator.transaction_extraction import run_transaction_extraction
 
 
 @pytest.fixture(autouse=True)
@@ -162,7 +162,7 @@ def test_assignment_preview_and_extraction_share_body_selection(
     snapshot = replace_field_parsers(template.id, _parsers())
     assert snapshot.preview is not None
     assert snapshot.preview["amount"] == expected
-    result = extract_transactions()
+    result = run_transaction_extraction()
     assert result.created == 3
     assert result.skipped == 1
     for transaction in reads.transaction_page(1).items:
@@ -327,7 +327,7 @@ def test_extraction_skips_incomplete_configuration_before_validation() -> None:
         FieldParser.insert(
             template=template, field_name="amount", rule="extracted", parameter_indices=[2]
         ).execute()
-    result = extract_transactions()
+    result = run_transaction_extraction()
     assert result.created == 0
     assert result.skipped == 1
     assert result.failed_templates == 0
@@ -345,7 +345,7 @@ def test_extraction_records_invalid_complete_configuration_as_failure() -> None:
         FieldParser.update(parameter_indices=[2]).where(
             (FieldParser.template == template.id) & (FieldParser.field_name == "amount")
         ).execute()
-    result = extract_transactions()
+    result = run_transaction_extraction()
     assert result.created == 0
     assert result.failed_templates == 1
     assert result.failed_emails == 1
@@ -414,5 +414,5 @@ def test_extraction_loads_parser_configuration_once_per_template(
         return original(templates, complete_only=complete_only)
 
     monkeypatch.setattr(transaction_extraction, "parser_sets", tracked)
-    assert extract_transactions().created == 4
+    assert run_transaction_extraction().created == 4
     assert calls == 1
