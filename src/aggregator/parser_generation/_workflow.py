@@ -26,8 +26,11 @@ from ..parser_configuration import (
     FieldParserSet,
     validate_parser_set,
 )
+from ..template_mining import ExtractedParameter
+from ..template_representation import TemplateRepresentation, resolve_fields
 from ..template_syntax import template_parameter_count
-from ._inputs import GenerationInput, ParameterExamples
+from ..transaction_extraction import extract_transaction
+from ._inputs import GenerationInput, ParameterExample, ParameterExamples
 from ._schemas import GeneratedFieldParsers
 
 type _ModelProvider = Literal["ollama", "mistral"]
@@ -74,6 +77,8 @@ class ParserGenerationError(ValueError):
 
 
 class _GenerationState(MessagesState):
+    template_text: str
+    parameter_examples: list[list[ParameterExample]]
     parameter_count: int
     attempts: int
     parsers: FieldParserSet | None
@@ -87,18 +92,24 @@ def _langfuse_tracing() -> tuple[Any, Any]:
     return CallbackHandler(), get_client()
 
 
-def _correction(error: Exception, attempts: int) -> dict[str, object]:
+def _correction(
+    error: Exception, attempts: int, *, details: str | None = None
+) -> dict[str, object]:
     if attempts >= _MAX_ATTEMPTS:
         raise ParserGenerationError(
             f"Parser generation failed after {_MAX_ATTEMPTS} attempts: {error}"
         ) from error
     return {
         "attempts": attempts,
+        "parsers": None,
         "messages": [
             HumanMessage(
-                content=f"The parser response failed validation: {error}\n"
-                "Return a corrected complete parser set for all seven fields, "
-                "following the original instructions."
+                content=(
+                    f"The parser response failed validation: {error}\n"
+                    f"{details + chr(10) if details is not None else ''}"
+                    "Return a corrected complete parser set for all seven fields, "
+                    "following the original instructions."
+                )
             )
         ],
     }
@@ -146,13 +157,52 @@ def _build_graph(
             return _correction(error, attempts)
         return {"parsers": parsers, "attempts": attempts}
 
-    def next_step(state: _GenerationState) -> Literal["retry", "done"]:
+    def verify_transactions(state: _GenerationState) -> dict[str, object]:
+        parsers = state["parsers"]
+        if parsers is None:  # pragma: no cover - graph routing prevents this
+            raise ParserGenerationError("Transaction verification received no parser set")
+
+        for example_number, example in enumerate(state["parameter_examples"], start=1):
+            parameters = tuple(
+                ExtractedParameter(parameter.value, parameter.mask_name)
+                for parameter in sorted(example, key=lambda parameter: parameter.index)
+            )
+            resolved_fields: dict[str, str | None] | None = None
+            try:
+                resolved_fields = resolve_fields(parameters, parsers)
+                representation = TemplateRepresentation(
+                    state["template_text"], parameters, resolved_fields
+                )
+                extract_transaction(representation)
+            except (ValueError, IndexError) as error:
+                return _correction(
+                    error,
+                    state["attempts"],
+                    details=(
+                        f"Transaction verification failed for example {example_number}. "
+                        f"Resolved fields: {resolved_fields!r}. Validation error: {error}"
+                    ),
+                )
+        return {}
+
+    def generated(state: _GenerationState) -> Literal["retry", "verify"]:
+        return "verify" if state["parsers"] is not None else "retry"
+
+    def verified(state: _GenerationState) -> Literal["retry", "done"]:
         return "done" if state["parsers"] is not None else "retry"
 
     builder = StateGraph(_GenerationState)
     builder.add_node("chat_model", chat_model)  # pyright: ignore[reportUnknownMemberType]
+    builder.add_node(  # pyright: ignore[reportUnknownMemberType]
+        "verify_transactions", verify_transactions
+    )
     builder.add_edge(START, "chat_model")
-    builder.add_conditional_edges("chat_model", next_step, {"retry": "chat_model", "done": END})
+    builder.add_conditional_edges(
+        "chat_model", generated, {"retry": "chat_model", "verify": "verify_transactions"}
+    )
+    builder.add_conditional_edges(
+        "verify_transactions", verified, {"retry": "chat_model", "done": END}
+    )
     return builder.compile()  # pyright: ignore[reportUnknownMemberType]
 
 
@@ -173,6 +223,8 @@ def generate_field_parsers(
         _GenerationState,
         {
             "messages": [HumanMessage(content=_PROMPT + request.model_dump_json())],
+            "template_text": request.template_text,
+            "parameter_examples": request.parameter_examples,
             "parameter_count": template_parameter_count(request.template_text),
             "attempts": 0,
             "parsers": None,

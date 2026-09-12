@@ -241,6 +241,107 @@ def test_multiple_examples_and_explicit_indices(endpoint: ModelEndpoint) -> None
     assert payload["parameter_examples"] == examples
 
 
+def test_verifies_every_example_in_explicit_index_order(
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: ModelEndpoint,
+    parser_data: dict[str, object],
+) -> None:
+    second = [dict(parameter) for parameter in reversed(EXAMPLE)]
+    second[2]["value"] = "100.00"
+    examples = [list(reversed(EXAMPLE)), second]
+    real_resolve_fields = _workflow.resolve_fields  # pyright: ignore[reportPrivateUsage]
+    resolve_fields = Mock(wraps=real_resolve_fields)
+    extract_transaction = Mock(wraps=_workflow.extract_transaction)
+    monkeypatch.setattr(_workflow, "resolve_fields", resolve_fields)
+    monkeypatch.setattr(_workflow, "extract_transaction", extract_transaction)
+
+    result = parser_generation.generate_field_parsers(TEMPLATE, examples)
+
+    assert result.model_dump() == parser_data
+    assert resolve_fields.call_count == 2
+    assert extract_transaction.call_count == 2
+    for call in resolve_fields.call_args_list:
+        parameters = call.args[0]
+        assert [parameter.mask_name for parameter in parameters] == [
+            "CURRENCY_CODE",
+            "NUMBER",
+            "NUMBER",
+            "*",
+        ]
+    assert resolve_fields.call_args_list[1].args[0][1].value == "100.00"
+
+
+@pytest.mark.parametrize(
+    ("field", "parameter_index", "message"),
+    [
+        ("amount", 0, "invalid amount"),
+        ("transaction_date", 3, "invalid transaction date"),
+        ("is_credit", 3, "invalid is_credit"),
+    ],
+)
+def test_transaction_verification_requests_a_correction(
+    endpoint: ModelEndpoint,
+    parser_data: dict[str, object],
+    field: str,
+    parameter_index: int,
+    message: str,
+) -> None:
+    invalid = dict(
+        parser_data,
+        **{field: {"rule": "extracted", "parameter_indices": [parameter_index]}},
+    )
+    endpoint.reply.side_effect = [json.dumps(invalid), json.dumps(parser_data)]
+
+    assert parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE).model_dump() == parser_data
+    assert len(endpoint.requests) == 2
+    messages = cast(list[dict[str, str]], endpoint.requests[-1]["messages"])
+    correction = messages[-1]["content"]
+    assert "example 1" in correction
+    assert "Resolved fields:" in correction
+    assert message in correction
+
+
+def test_one_failing_example_rejects_the_complete_candidate(
+    endpoint: ModelEndpoint, parser_data: dict[str, object]
+) -> None:
+    second = [dict(parameter) for parameter in EXAMPLE]
+    second[1]["value"] = "not-an-amount"
+    endpoint.reply.side_effect = [
+        json.dumps(parser_data),
+        json.dumps(dict(parser_data, amount={"rule": "missing"})),
+    ]
+
+    result = parser_generation.generate_field_parsers(TEMPLATE, [EXAMPLE, second])
+
+    assert result.amount is not None
+    assert result.amount.rule == "missing"
+    assert len(endpoint.requests) == 2
+    messages = cast(list[dict[str, str]], endpoint.requests[-1]["messages"])
+    assert "example 2" in messages[-1]["content"]
+
+
+def test_schema_and_transaction_failures_share_attempt_limit(
+    endpoint: ModelEndpoint, parser_data: dict[str, object]
+) -> None:
+    invalid_amount = dict(parser_data, amount={"rule": "extracted", "parameter_indices": [0]})
+    endpoint.reply.side_effect = ["{}", json.dumps(invalid_amount), json.dumps(invalid_amount)]
+
+    with pytest.raises(parser_generation.ParserGenerationError, match="after 3 attempts"):
+        parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE)
+    assert len(endpoint.requests) == 3
+
+
+def test_three_transaction_verification_failures_exhaust_retries(
+    endpoint: ModelEndpoint, parser_data: dict[str, object]
+) -> None:
+    invalid_amount = dict(parser_data, amount={"rule": "extracted", "parameter_indices": [0]})
+    endpoint.reply.return_value = json.dumps(invalid_amount)
+
+    with pytest.raises(parser_generation.ParserGenerationError, match="invalid amount"):
+        parser_generation.generate_field_parsers(TEMPLATE, EXAMPLE)
+    assert len(endpoint.requests) == 3
+
+
 def test_accepts_parameter_models(endpoint: ModelEndpoint) -> None:
     parameters = [ParameterExample.model_validate(parameter) for parameter in EXAMPLE]
     parser_generation.generate_field_parsers(TEMPLATE, parameters)
