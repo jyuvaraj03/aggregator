@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Start the local infrastructure, API, Celery worker, and frontend together.
+set -Eeuo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repository_root"
+
+process_ids=()
+
+cleanup() {
+    local exit_status=$?
+
+    trap - EXIT INT TERM
+
+    for process_id in "${process_ids[@]}"; do
+        kill "$process_id" 2>/dev/null || true
+    done
+
+    for process_id in "${process_ids[@]}"; do
+        wait "$process_id" 2>/dev/null || true
+    done
+
+    exit "$exit_status"
+}
+
+trap cleanup EXIT INT TERM
+
+docker compose up &
+process_ids+=("$!")
+
+(
+    cd frontend
+    npm run dev
+) &
+process_ids+=("$!")
+
+uv run aggregator-api &
+process_ids+=("$!")
+
+uv run aggregator-worker &
+process_ids+=("$!")
+
+wait -n "${process_ids[@]}"
