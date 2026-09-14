@@ -24,6 +24,9 @@ dependencies = [
     "uvicorn>=0.40.0",
     "iso4217>=1.16.20260101",
     "imap-tools>=1.15.0",
+    "pandas>=3.0.5",
+    "joblib>=1.6.0",
+    "scikit-learn>=1.9.1",
 ]
 
 [project.scripts]
