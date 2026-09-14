@@ -12,6 +12,7 @@ dependencies = [
     { name = "drain3" },
     { name = "fastapi" },
     { name = "google-auth", extra = ["requests"] },
+    { name = "imap-tools" },
     { name = "iso4217" },
     { name = "langchain" },
     { name = "langchain-mistralai" },
@@ -39,6 +40,7 @@ requires-dist = [
     { name = "drain3", specifier = ">=0.9.11" },
     { name = "fastapi", specifier = ">=0.128.0" },
     { name = "google-auth", extras = ["requests"], specifier = ">=2.0" },
+    { name = "imap-tools", specifier = ">=1.15.0" },
     { name = "iso4217", specifier = ">=1.16.20260101" },
     { name = "langchain", specifier = ">=1.0.0" },
     { name = "langchain-mistralai", specifier = ">=1.1.6" },
@@ -652,6 +654,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5f/f7/abb373e5757eaec4b922b92f97ec8d6d7e057cf06778247604fbc4e7c3f3/idna-3.19.tar.gz", hash = "sha256:5e0811a4383b21dc5838069f801c4fb62113b7447663d2530d2bd6e77b49bf15", size = 215237, upload-time = "2026-08-18T05:14:24.27Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl", hash = "sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4", size = 68550, upload-time = "2026-08-18T05:14:22.343Z" },
+]
+
+[[package]]
+name = "imap-tools"
+version = "1.15.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/4e/acf9a7d59932548bc749fe0f5ae852e6da00b640303ed72786f697944b69/imap_tools-1.15.0.tar.gz", hash = "sha256:a90f948549ab000d96caf17c90e63b114f8788ba4a0d3f9274a96c0e108c3805", size = 48497, upload-time = "2026-08-06T10:25:26.567Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/50/eb/a4ad6ec962af2806c3484adb1869c24a04d8ef8c2034f2dd2b0f48459b0a/imap_tools-1.15.0-py3-none-any.whl", hash = "sha256:7bb0003c8bf124b80968c7bef786e4577d8365e9afb6551dc15b13161b688bdc", size = 36512, upload-time = "2026-08-06T10:25:24.377Z" },
 ]
 
 [[package]]

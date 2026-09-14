@@ -23,6 +23,7 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "uvicorn>=0.40.0",
     "iso4217>=1.16.20260101",
+    "imap-tools>=1.15.0",
 ]
 
 [project.scripts]
