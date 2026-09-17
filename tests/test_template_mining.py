@@ -3,6 +3,7 @@ from __future__ import annotations
 # Drain3, Peewee, and its migration helper are dynamically typed.
 # pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -497,6 +498,21 @@ def test_assignment_reuses_existing_template_without_counting_it_as_new() -> Non
 
     assert result == TemplateAssignmentResult(processed=1, skipped=0, templates_created=0)
     assert Email.get_by_id(email.id).template_id == existing.id
+
+
+def test_assignment_guard_prevents_persistence_after_mining() -> None:
+    email = _email("order", "<p>Order #42 confirmed</p>")
+
+    @contextmanager
+    def superseded() -> Generator[None]:
+        raise RuntimeError("superseded")
+        yield
+
+    with pytest.raises(RuntimeError, match="superseded"):
+        assign_email_templates(commit_guard=superseded)
+
+    assert Template.select().count() == 0
+    assert Email.get_by_id(email.id).template_id is None
 
 
 def test_assignment_rolls_back_when_template_creation_fails(

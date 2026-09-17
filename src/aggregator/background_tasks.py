@@ -1,17 +1,26 @@
 """Celery tasks which adapt application operations to JSON job results."""
 
 # Celery does not publish type stubs.
-# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUntypedFunctionDecorator=false, reportUnknownVariableType=false
+# pyright: reportAttributeAccessIssue=false, reportFunctionMemberAccess=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUntypedFunctionDecorator=false, reportUnknownVariableType=false
 
 from __future__ import annotations
 
 from datetime import date
+from typing import NoReturn
+from uuid import uuid4
+
+from celery.exceptions import Ignore
 
 from .celery_app import celery_app
 from .email_pull import ConfigurationError, CredentialsError, InvalidInputError
 from .email_sync import sync_messages
 from .field_parsers import FieldParserGenerationError, generate_and_replace_field_parsers
 from .template_assignment import assign_email_templates
+from .template_assignment_queue import (
+    TemplateAssignmentSupersededError,
+    current_job_guard,
+    publish_as_latest,
+)
 from .transaction_extraction import run_transaction_extraction
 
 _PERMANENT_ERRORS = (
@@ -43,15 +52,33 @@ def sync_email_task(self: object, from_date: str) -> dict[str, int]:
         raise AssertionError("unreachable") from error
 
 
+def queue_email_template_assignment() -> object:
+    """Queue a template-assignment job which supersedes its predecessors."""
+    job_id = str(uuid4())
+    return publish_as_latest(
+        job_id,
+        lambda: assign_email_templates_task.apply_async(args=(job_id,), task_id=job_id),
+    )
+
+
+def _mark_superseded(task: object) -> NoReturn:
+    task.update_state(state="SUPERSEDED")
+    raise Ignore()
+
+
 @celery_app.task(bind=True, name="aggregator.template_assignment", max_retries=2)
-def assign_email_templates_task(self: object) -> dict[str, int]:
+def assign_email_templates_task(self: object, job_id: str) -> dict[str, int]:
     try:
-        result = assign_email_templates()
+        with current_job_guard(job_id):
+            pass
+        result = assign_email_templates(commit_guard=lambda: current_job_guard(job_id))
         return {
             "processed": result.processed,
             "skipped": result.skipped,
             "templates_created": result.templates_created,
         }
+    except TemplateAssignmentSupersededError:
+        _mark_superseded(self)
     except Exception as error:
         _retryable(self, error)
         raise AssertionError("unreachable") from error

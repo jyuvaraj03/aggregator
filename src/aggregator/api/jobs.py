@@ -21,6 +21,7 @@ _STATUSES = {
     "RETRY": "retrying",
     "SUCCESS": "succeeded",
     "FAILURE": "failed",
+    "SUPERSEDED": "superseded",
 }
 
 
@@ -28,7 +29,7 @@ _STATUSES = {
 def get_job(job_id: str) -> BackgroundJobStatusResponse:
     result = AsyncResult(job_id, app=celery_app)
     status = cast(
-        Literal["queued", "running", "retrying", "succeeded", "failed"],
+        Literal["queued", "running", "retrying", "succeeded", "failed", "superseded"],
         _STATUSES.get(result.state, "failed"),
     )
     action = result.name or "unknown"

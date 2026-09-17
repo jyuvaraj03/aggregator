@@ -30,7 +30,7 @@ class _QueuedJob:
 def queue_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(actions.sync_email_task, "delay", lambda *_: _QueuedJob("sync-job"))
     monkeypatch.setattr(
-        actions.assign_email_templates_task, "delay", lambda: _QueuedJob("assignment-job")
+        actions, "queue_email_template_assignment", lambda: _QueuedJob("assignment-job")
     )
     monkeypatch.setattr(
         actions.extract_transactions_task, "delay", lambda: _QueuedJob("extraction-job")
@@ -731,6 +731,10 @@ def test_actions_enqueue_background_jobs(
 
     def unavailable(*_: object) -> _QueuedJob:
         raise RuntimeError("queue unavailable")
+
+    monkeypatch.setattr(actions, "queue_email_template_assignment", unavailable)
+    unavailable_assignment = client.post("/email-template-assignment")
+    assert unavailable_assignment.status_code == 503
 
     monkeypatch.setattr(actions.sync_email_task, "delay", unavailable)
     unavailable_response = client.post("/email-sync", json={"from_date": "2026-09-01"})

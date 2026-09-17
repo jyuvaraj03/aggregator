@@ -4,6 +4,8 @@
 # pyright: reportAttributeAccessIssue=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 
 from .database import database, database_connection
@@ -21,7 +23,9 @@ class TemplateAssignmentResult:
     templates_created: int
 
 
-def assign_email_templates() -> TemplateAssignmentResult:
+def assign_email_templates(
+    *, commit_guard: Callable[[], AbstractContextManager[None]] | None = None
+) -> TemplateAssignmentResult:
     """Assign mined templates to emails that do not yet have one."""
     with database_connection():
         emails = list(
@@ -41,7 +45,9 @@ def assign_email_templates() -> TemplateAssignmentResult:
             mining_records,
             existing_templates_texts,
         )
-        templates_created = _store_and_assign(result.patterns)
+        guard = commit_guard() if commit_guard is not None else nullcontext()
+        with guard:
+            templates_created = _store_and_assign(result.patterns)
 
     return TemplateAssignmentResult(
         processed=result.processed,

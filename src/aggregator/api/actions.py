@@ -8,8 +8,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..background_tasks import (
-    assign_email_templates_task,
     extract_transactions_task,
+    queue_email_template_assignment,
     sync_email_task,
 )
 from .schemas import (
@@ -50,7 +50,13 @@ def sync_email(request: EmailSyncRequest, response: Response) -> BackgroundJobRe
     status_code=status.HTTP_202_ACCEPTED,
 )
 def assign_email_templates_action(response: Response) -> BackgroundJobResponse:
-    return _submitted(assign_email_templates_task, response)
+    try:
+        job = queue_email_template_assignment()
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Background queue is unavailable") from error
+    status_url = f"/jobs/{job.id}"
+    response.headers["Location"] = status_url
+    return BackgroundJobResponse(job_id=job.id, status_url=status_url)
 
 
 @router.post(

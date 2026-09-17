@@ -182,6 +182,6 @@ class BackgroundJobResponse(BaseModel):
 class BackgroundJobStatusResponse(BaseModel):
     job_id: str
     action: str
-    status: Literal["queued", "running", "retrying", "succeeded", "failed"]
+    status: Literal["queued", "running", "retrying", "succeeded", "failed", "superseded"]
     result: dict[str, object] | None = None
     error: str | None = None
