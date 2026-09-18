@@ -121,7 +121,7 @@ def test_bulk_mine_templates_masks_a_ten_digit_number() -> None:
     assert result.patterns == (MinedPattern("OTP <NUMBER> generated", (1, 2, 3)),)
 
 
-def test_bulk_mine_templates_excludes_clusters_below_minimum_size() -> None:
+def test_bulk_mine_templates_includes_single_record_clusters() -> None:
     result = bulk_mine_templates(
         [
             MiningRecord(1, "Payment #100 received"),
@@ -131,7 +131,10 @@ def test_bulk_mine_templates_excludes_clusters_below_minimum_size() -> None:
     )
 
     assert result.processed == 3
-    assert result.patterns == ()
+    assert result.patterns == (
+        MinedPattern("Payment #<NUMBER> received", (1, 2)),
+        MinedPattern("Password reset requested", (3,)),
+    )
 
 
 def test_bulk_mine_templates_picks_existing_templates_before_mining_new_ones() -> None:
@@ -142,7 +145,7 @@ def test_bulk_mine_templates_picks_existing_templates_before_mining_new_ones() -
             MiningRecord("new-2", "Payment #101 received"),
             MiningRecord("new-3", "Payment #102 received"),
         ],
-        ["Order #<NUMBER> confirmed"],
+        ["Order #<NUMBER> confirmed", "An unused existing template"],
     )
 
     assert result == MiningResult(
