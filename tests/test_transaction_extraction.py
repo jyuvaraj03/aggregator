@@ -58,9 +58,7 @@ def _email(index: int, template: Template | None = None) -> Email:
         received_at=datetime(2026, 9, 1, index, tzinfo=UTC),
         sender="merchant@example.com",
         subject="Receipt",
-        body_text="receipt",
-        body_html="<p>receipt</p>",
-        headers={},
+        body="receipt",
         template=template,
     )
 

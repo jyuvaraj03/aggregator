@@ -17,6 +17,7 @@ from aggregator.database import (
     connect_database,
     database,
 )
+from aggregator.email_content import readable_body
 from aggregator.models import Email, FieldParser, Template
 from aggregator.parser_configuration import FieldParserRule, TransactionFieldName
 from aggregator.reads import email_by_id
@@ -312,8 +313,7 @@ def _email(message_id: str, body_html: str, *, template: Template | None = None)
         message_id=message_id,
         received_at=datetime(2026, 9, 1, tzinfo=UTC) + timedelta(minutes=Email.select().count()),
         sender="merchant@example.com",
-        body_html=body_html,
-        headers={},
+        body=readable_body(body_html, None),
         template=template,
     )
 

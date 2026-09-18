@@ -13,7 +13,6 @@ from dateutil.parser import ParserError, parse
 from peewee import JOIN
 
 from .database import database, database_connection
-from .email_content import readable_body
 from .models import (
     Email,
     Template,
@@ -179,9 +178,7 @@ def _prepare_transactions(
 
         values: list[dict[str, object]] = []
         for email in emails:
-            representation = represent_email_template(
-                template.text, readable_body(email.body_html, email.body_text), parsers
-            )
+            representation = represent_email_template(template.text, email.body, parsers)
             transaction = extract_transaction(representation)
             values.append(
                 {

@@ -58,12 +58,8 @@ def _existing_message_ids(messages: list[EmailMessage]) -> set[str]:
 def _email_values(message: EmailMessage) -> dict[str, object]:
     return {
         "message_id": message.message_id,
-        "history_id": message.history_id,
         "received_at": message.received_at,
         "sender": message.sender,
         "subject": message.subject,
-        "body_text": message.body_text,
-        "body_html": message.body_html,
-        "headers": dict(message.headers),
-        "authentication_status": message.authentication_status,
+        "body": message.body,
     }

@@ -136,8 +136,52 @@ def test_account_association_migration_constraints_and_downgrade(tmp_path: Path)
     assert database.execute_sql("SELECT account_id FROM templates").fetchone() == (None,)
     assert database.execute_sql("SELECT COUNT(*) FROM transactions").fetchone() == (0,)
 
-    runner.down()
+    runner.down("0008_associate_accounts")
 
     assert "account_id" not in {column.name for column in database.get_columns("templates")}
     assert "account_id" not in {column.name for column in database.get_columns("transactions")}
     assert "accounts" in database.get_tables()
+
+
+def test_readable_email_body_migration_discards_legacy_fields(tmp_path: Path) -> None:
+    database = SqliteDatabase(str(tmp_path / "migration.sqlite3"), pragmas={"foreign_keys": 1})
+    runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
+    runner.up("0008_associate_accounts")
+    database.execute_sql(
+        """INSERT INTO emails
+           (message_id, received_at, sender, body_text, body_html, headers)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            "message-1",
+            "2026-09-01",
+            "sender@example.com",
+            "plain body",
+            "<p>HTML body</p>",
+            "{}",
+        ),
+    )
+
+    runner.up()
+
+    assert [column.name for column in database.get_columns("emails")] == [
+        "id",
+        "message_id",
+        "received_at",
+        "sender",
+        "subject",
+        "template_id",
+        "body",
+    ]
+    assert database.execute_sql("SELECT body FROM emails").fetchone() == ("",)
+
+    runner.down()
+
+    columns = {column.name for column in database.get_columns("emails")}
+    assert "body" not in columns
+    assert {
+        "history_id",
+        "body_text",
+        "body_html",
+        "headers",
+        "authentication_status",
+    }.issubset(columns)

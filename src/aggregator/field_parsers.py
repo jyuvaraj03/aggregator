@@ -6,7 +6,6 @@ from typing import Literal, cast
 
 from . import parser_generation, queries
 from .database import database, database_connection
-from .email_content import readable_body
 from .models import FieldParser, Template, TransactionExtractionStatus
 from .parser_configuration import (
     ConstantFieldParser,
@@ -29,9 +28,7 @@ def _snapshot(template: Template, parsers: FieldParserSet) -> ParserSnapshot:
     values: list[str | None] = [None] * len(masks)
     preview: dict[str, str | None] | None = None
     if example is not None:
-        representation = represent_email_template(
-            template.text, readable_body(example.body_html, example.body_text), parsers
-        )
+        representation = represent_email_template(template.text, example.body, parsers)
         for index, parameter in enumerate(representation.extracted_parameters[: len(values)]):
             values[index] = parameter.value
         preview = representation.resolved_fields
@@ -67,7 +64,7 @@ def generate_and_replace_field_parsers(template_id: int) -> ParserSnapshot:
         template_text = str(template.text)
         representation = represent_email_template(
             template_text,
-            readable_body(example.body_html, example.body_text),
+            example.body,
             FieldParserSet(),
         )
         parameter_example: list[dict[str, object]] = [

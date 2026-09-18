@@ -9,7 +9,6 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 
 from .database import database, database_connection
-from .email_content import readable_body
 from .models import Email, Template
 from .template_mining import MinedPattern, MiningRecord, bulk_mine_templates
 
@@ -34,7 +33,7 @@ def assign_email_templates(
         mining_records = (
             MiningRecord(
                 record_id=email.id,
-                text=readable_body(email.body_html, email.body_text),
+                text=email.body,
             )
             for email in emails
         )

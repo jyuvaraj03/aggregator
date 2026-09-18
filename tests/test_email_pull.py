@@ -82,8 +82,9 @@ def test_pull_messages_paginates_and_normalizes(
     ]
     assert messages[0].received_at == datetime(2024, 1, 1, tzinfo=UTC)
     assert messages[0].sender == "merchant@example.com"
-    assert messages[0].body_text == "receipt text"
-    assert messages[0].body_html == "<p>receipt html</p>"
+    assert messages[0].subject == "Receipt"
+    assert messages[0].body == "receipt html"
+    assert messages[1].body == ""
     assert session.calls[0][1]["q"] == 'label:"Transactions" after:2024/01/01'
     assert session.closed
 

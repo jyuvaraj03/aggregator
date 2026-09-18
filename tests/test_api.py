@@ -145,10 +145,7 @@ def _email(index: int, *, template: Template | None = None) -> Email:
         received_at=datetime(2026, 9, 1, tzinfo=UTC) + timedelta(minutes=index),
         sender="sender@example.com",
         subject=f"Subject {index}",
-        body_text="plain fallback",
-        body_html="<h1>Hello</h1><script>secret()</script><p>World</p>",
-        headers={"authorization": "secret"},
-        authentication_status="sensitive",
+        body="Hello World",
         template=template,
     )
 
@@ -399,7 +396,7 @@ def test_account_deletion_cascades_transactions_and_preserves_templates(
 def test_email_representation_shapes_for_index_and_detail(client: TestClient) -> None:
     template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email(1, template=template)
-    email.body_html = "<p>Order #42 confirmed for $7.20</p>"
+    email.body = "Order #42 confirmed for $7.20"
     email.save()
 
     detail_expected = {
@@ -435,7 +432,7 @@ def test_fixed_transaction_fields_require_no_catalog_table(client: TestClient) -
 def test_field_parser_snapshot_and_atomic_replacement(client: TestClient) -> None:
     template = Template.create(text="Order #<NUMBER> confirmed for <CURRENCY_CODE><NUMBER>")
     email = _email(1, template=template)
-    email.body_html = "<p>Order #42 confirmed for $7.20</p>"
+    email.body = "Order #42 confirmed for $7.20"
     email.save()
 
     replacement = {
@@ -525,7 +522,7 @@ def test_generate_field_parsers_endpoint_replaces_and_previews(
         transaction_extraction_error="old failure",
     )
     email = _email(1, template=template)
-    email.body_html = "<p>Paid $19</p>"
+    email.body = "Paid $19"
     email.save()
     FieldParser.create(
         template=template,
@@ -593,7 +590,7 @@ def test_generate_field_parsers_endpoint_failures(
 def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient) -> None:
     template = Template.create(text="Paid <NUMBER>")
     email = _email(1, template=template)
-    email.body_html = "<p>Paid 19</p>"
+    email.body = "Paid 19"
     email.save()
     response = client.put(
         f"/templates/{template.id}/field-parsers",
@@ -620,7 +617,7 @@ def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient)
 def test_transaction_pagination_fields_and_email_representation(client: TestClient) -> None:
     template = Template.create(text="Paid <NUMBER>")
     represented_email = _email(0, template=template)
-    represented_email.body_html = "<p>Paid 19</p>"
+    represented_email.body = "Paid 19"
     represented_email.save()
     parser_response = client.put(
         f"/templates/{template.id}/field-parsers",

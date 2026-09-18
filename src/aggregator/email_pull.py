@@ -23,6 +23,8 @@ from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.auth.transport.requests import AuthorizedSession
 from requests.exceptions import RequestException
 
+from .email_content import readable_body
+
 GMAIL_MESSAGES_URL = "https://www.googleapis.com/gmail/v1/users/me/messages"
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
@@ -57,14 +59,10 @@ class EmailMessage:
     """A normalized Gmail message, kept entirely in memory."""
 
     message_id: str
-    history_id: str | None
     received_at: datetime
     sender: str
     subject: str | None
-    body_text: str | None
-    body_html: str | None
-    headers: Mapping[str, str]
-    authentication_status: str | None
+    body: str
 
 
 def pull_messages(from_date: date | datetime) -> list[EmailMessage]:
@@ -157,17 +155,12 @@ def _normalize_message(message: dict[str, object]) -> EmailMessage:
     if not message_id:
         raise MalformedMessageError("message is missing a non-empty Message-ID header")
     body_text, body_html = _message_bodies(payload)
-    history_id = message.get("historyId")
     return EmailMessage(
         message_id=message_id,
-        history_id=history_id if isinstance(history_id, str) else None,
         received_at=received_at,
         sender=headers.get("from", ""),
         subject=headers.get("subject"),
-        body_text=body_text,
-        body_html=body_html,
-        headers=headers,
-        authentication_status=headers.get("authentication-results"),
+        body=readable_body(body_html, body_text),
     )
 
 

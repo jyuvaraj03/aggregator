@@ -36,22 +36,14 @@ def in_memory_database() -> Generator[None]:
 def _message(message_id: str = "<message-1@example.com>") -> EmailMessage:
     return EmailMessage(
         message_id=message_id,
-        history_id="history-1",
         received_at=datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC),
         sender="merchant@example.com",
         subject="Receipt",
-        body_text="Plain receipt",
-        body_html="<p>HTML receipt</p>",
-        headers={
-            "from": "merchant@example.com",
-            "subject": "Receipt",
-            "authentication-results": "spf=pass",
-        },
-        authentication_status="spf=pass",
+        body="HTML receipt",
     )
 
 
-def test_sync_stores_all_normalized_email_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sync_stores_only_readable_email_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     message = _message()
     monkeypatch.setattr(email_sync, "pull_messages", lambda _date: [message])
 
@@ -60,14 +52,10 @@ def test_sync_stores_all_normalized_email_fields(monkeypatch: pytest.MonkeyPatch
     stored = email_sync.Email.get()
     assert result == email_sync.SyncResult(pulled=1, inserted=1, already_stored=0)
     assert stored.message_id == message.message_id
-    assert stored.history_id == message.history_id
     assert stored.received_at == message.received_at
     assert stored.sender == message.sender
     assert stored.subject == message.subject
-    assert stored.body_text == message.body_text
-    assert stored.body_html == message.body_html
-    assert stored.headers == dict(message.headers)
-    assert stored.authentication_status == message.authentication_status
+    assert stored.body == message.body
 
 
 def test_sync_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,13 +91,13 @@ def test_sync_deduplicates_distinct_messages_with_the_same_rfc_message_id(
     # RFC Message-IDs should be globally unique, but retries, imports, or broken senders can
     # reuse one for distinct messages. Synchronization treats them as copies and keeps the first.
     first = _message("<shared@example.com>")
-    second = replace(first, history_id="history-2", subject="Another copy")
+    second = replace(first, body="Another copy")
     monkeypatch.setattr(email_sync, "pull_messages", lambda _date: [first, second])
 
     result = email_sync.sync_messages(date(2024, 1, 1))
 
     stored = email_sync.Email.get()
-    assert stored.history_id == "history-1"
+    assert stored.body == "HTML receipt"
     assert email_sync.Email.select().count() == 1
     assert result == email_sync.SyncResult(pulled=2, inserted=1, already_stored=1)
 

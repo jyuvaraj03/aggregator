@@ -29,20 +29,6 @@ from .parser_configuration import (
 from .template_syntax import template_parameter_count
 
 
-class JSONTextField(TextField):
-    """Store JSON in SQLite while exposing it as a dictionary in Python."""
-
-    def db_value(self, value: object) -> str:
-        return json.dumps(value)
-
-    def python_value(self, value: object) -> dict[str, str]:
-        if isinstance(value, str):
-            decoded = json.loads(value)
-            if isinstance(decoded, dict):
-                return {str(key): str(item) for key, item in decoded.items()}
-        return {}
-
-
 class JSONIntegerListField(TextField):
     """Store an ordered list of integer values as JSON in SQLite."""
 
@@ -143,14 +129,10 @@ class Email(Model):
 
     id = AutoField()
     message_id = CharField(unique=True)
-    history_id = CharField(null=True)
     received_at = DateTimeField()
     sender = TextField()
     subject = TextField(null=True)
-    body_text = TextField(null=True)
-    body_html = TextField(null=True)
-    headers = JSONTextField()
-    authentication_status = TextField(null=True)
+    body = TextField()
     template = ForeignKeyField(Template, null=True, backref="emails", on_delete="SET NULL")
 
     if TYPE_CHECKING:

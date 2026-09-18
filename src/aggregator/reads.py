@@ -6,7 +6,6 @@ from typing import cast
 
 from . import queries
 from .database import database_connection
-from .email_content import readable_body
 from .models import Email, Template
 from .read_models import EmailRecord, Page, TemplateRecord, TransactionRecord
 from .template_representation import represent_email_template
@@ -20,7 +19,7 @@ def _email_record(email: Email) -> EmailRecord:
         sender=email.sender,
         subject=email.subject,
         template_id=email.template_id,
-        body=readable_body(email.body_html, email.body_text),
+        body=email.body,
     )
 
 

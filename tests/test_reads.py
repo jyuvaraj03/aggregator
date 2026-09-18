@@ -50,16 +50,13 @@ def _email(
     index: int,
     template: Template | None = None,
     *,
-    html: str | None = "<p>Paid 10</p>",
-    plain: str | None = None,
+    body: str = "Paid 10",
 ) -> Email:
     return Email.create(
         message_id=f"email-{index}",
         received_at=datetime(2026, 9, 1, tzinfo=UTC),
         sender="merchant@example.com",
-        body_html=html,
-        body_text=plain,
-        headers={},
+        body=body,
         template=template,
     )
 
@@ -102,9 +99,6 @@ def test_serializers_use_only_detached_prepared_values(monkeypatch: pytest.Monke
     monkeypatch.setattr(database, "execute_sql", unexpected_work)
     monkeypatch.setattr(template_representation, "get_extracted_parameters", unexpected_work)
     monkeypatch.setattr(template_representation, "resolve_fields", unexpected_work)
-    monkeypatch.setattr(reads, "readable_body", unexpected_work)
-    monkeypatch.setattr(field_parsers, "readable_body", unexpected_work)
-
     assert serializers.email_detail(email_record).body == "Paid 10"
     assert serializers.email_summary(email_page.items[0]).representation is not None
     assert serializers.transaction_response(transaction_page.items[0]).amount == Decimal("10")
@@ -138,20 +132,17 @@ def test_page_query_count_is_bounded(operation: Callable[[int], object]) -> None
 
 
 @pytest.mark.parametrize(
-    ("html", "plain", "expected"),
+    ("body", "expected"),
     [
-        (None, "Paid 10", "10"),
-        ("<div> </div>", "Paid 10", "10"),
-        ("<p>Paid 20</p>", "Paid 10", "20"),
+        ("Paid 10", "10"),
+        ("Paid 20", "20"),
     ],
 )
-def test_assignment_preview_and_extraction_share_body_selection(
-    html: str | None, plain: str, expected: str
-) -> None:
+def test_assignment_preview_and_extraction_share_stored_body(body: str, expected: str) -> None:
     with database_connection():
         for index in range(3):
-            _email(index, html=html, plain=plain)
-        _email(3, html=None, plain=None)
+            _email(index, body=body)
+        _email(3, body="")
     assignment = assign_email_templates()
     assert assignment.processed == 3
     assert assignment.skipped == 1
@@ -182,7 +173,7 @@ def test_replacement_rolls_back_when_preview_fails() -> None:
             transaction_extraction_status="failed",
             transaction_extraction_error="original failure",
         )
-        _email(1, template, html="<p>Unrelated message</p>")
+        _email(1, template, body="Unrelated message")
         FieldParser.create(
             template=template,
             field_name="amount",
@@ -227,10 +218,10 @@ def test_generation_uses_earliest_email_after_releasing_connection(
             transaction_extraction_status="failed",
             transaction_extraction_error="old failure",
         )
-        later = _email(2, template, html="<p>Paid $20</p>")
+        later = _email(2, template, body="Paid $20")
         later.received_at = datetime(2026, 9, 2, tzinfo=UTC)
         later.save()
-        earlier = _email(1, template, html="<p>Paid Rs.10</p>")
+        earlier = _email(1, template, body="Paid Rs.10")
         earlier.received_at = datetime(2026, 9, 1, tzinfo=UTC)
         earlier.save()
         FieldParser.create(
