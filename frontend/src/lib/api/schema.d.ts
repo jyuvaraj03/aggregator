@@ -173,23 +173,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/email-template-assignment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Assign Email Templates Action */
-        post: operations["assign_email_templates_action_email_template_assignment_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/transaction-extraction": {
         parameters: {
             query?: never;
@@ -292,7 +275,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "retrying" | "succeeded" | "failed";
+            status: "queued" | "running" | "retrying" | "succeeded" | "failed" | "superseded";
             /** Result */
             result?: {
                 [key: string]: unknown;
@@ -1081,26 +1064,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    assign_email_templates_action_email_template_assignment_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BackgroundJobResponse"];
                 };
             };
         };

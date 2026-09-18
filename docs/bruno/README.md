@@ -14,4 +14,6 @@ This collection exercises the local Aggregator API. It does not need authenticat
 
 The `Get ... by ID` requests use `1` as an example; change it to an ID returned
 by the corresponding list request. `Sync Email` requires configured local Gmail
-Application Default Credentials, as described in the repository README.
+Application Default Credentials, as described in the repository README. Its request
+documentation shows how the sync job links to template assignment and how template
+assignment links to each parser-generation job. Use `Jobs / Check Job` for every ID.

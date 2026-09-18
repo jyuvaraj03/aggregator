@@ -1,14 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
-import { api, apiError, waitForJob } from "../../lib/api/client";
+import { api, apiError } from "../../lib/api/client";
 
 export const templateKeys = { all: ["templates"] as const };
-export const extractionKey = ["extract-templates"] as const;
-
-export type TemplateExtractionResult = {
-    processed: number;
-    skipped: number;
-    templates_created: number;
-};
 
 export function templatePageOptions(page: number) {
     return queryOptions({
@@ -36,22 +29,4 @@ export function templateDetailOptions(id: number) {
             return data;
         },
     });
-}
-
-export async function extractTemplates(): Promise<TemplateExtractionResult> {
-    const { data: submitted, error, response } = await api.POST("/email-template-assignment");
-    if (!submitted) throw apiError(response.status, error);
-    return waitForJob(submitted.job_id, isTemplateExtractionResult);
-}
-
-function isTemplateExtractionResult(
-    value: object | null | undefined,
-): value is TemplateExtractionResult {
-    const result = value as Record<string, unknown> | null;
-    return (
-        result !== null &&
-        typeof result.processed === "number" &&
-        typeof result.skipped === "number" &&
-        typeof result.templates_created === "number"
-    );
 }

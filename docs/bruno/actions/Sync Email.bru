@@ -15,3 +15,41 @@ body:json {
     "from_date": "2026-07-01"
   }
 }
+
+docs {
+  The `202 Accepted` response identifies the sync job:
+
+  ```json
+  {"job_id":"sync-job","status_url":"/jobs/sync-job"}
+  ```
+
+  Open **Jobs / Check Job** with that `job_id`. A successful sync result links to the
+  template-assignment job that was submitted after synchronization:
+
+  ```json
+  {
+    "pulled": 7,
+    "inserted": 3,
+    "already_stored": 4,
+    "template_assignment_job_id": "assignment-job"
+  }
+  ```
+
+  Check `assignment-job` through the same job endpoint. Its result links every newly
+  created template to its independent parser-generation job:
+
+  ```json
+  {
+    "processed": 3,
+    "skipped": 0,
+    "templates_created": 1,
+    "created_template_ids": [12],
+    "parser_generation_jobs": [
+      {"template_id": 12, "job_id": "parser-job"}
+    ]
+  }
+  ```
+
+  Check each parser `job_id` separately. Parser failures do not change the completed sync
+  or template-assignment results, and transaction extraction is not started automatically.
+}

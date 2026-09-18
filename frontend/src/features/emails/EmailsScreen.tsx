@@ -78,7 +78,8 @@ export function EmailsScreen() {
                         <strong>Sync complete.</strong> {sync.data.pulled} pulled ·{" "}
                         {sync.data.inserted} inserted · {sync.data.already_stored} already stored
                         <span className="result-note">
-                            <Link to="/templates">Go to templates to extract patterns</Link>
+                            Template mining and parser generation are continuing in the background.{" "}
+                            <Link to="/templates">View templates</Link>
                         </span>
                     </p>
                 )}

@@ -488,7 +488,12 @@ def test_assignment_loads_untagged_html_emails_and_assigns_template() -> None:
     result = assign_email_templates()
 
     template = Template.get(Template.text == "Order #<NUMBER> confirmed")
-    assert result == TemplateAssignmentResult(processed=3, skipped=1, templates_created=1)
+    assert result == TemplateAssignmentResult(
+        processed=3,
+        skipped=1,
+        templates_created=1,
+        created_template_ids=(template.id,),
+    )
     assert [Email.get_by_id(email.id).template_id for email in emails] == [template.id] * 3
     assert Email.get_by_id(1).template_id == tagged.id
 
@@ -499,7 +504,12 @@ def test_assignment_reuses_existing_template_without_counting_it_as_new() -> Non
 
     result = assign_email_templates()
 
-    assert result == TemplateAssignmentResult(processed=1, skipped=0, templates_created=0)
+    assert result == TemplateAssignmentResult(
+        processed=1,
+        skipped=0,
+        templates_created=0,
+        created_template_ids=(),
+    )
     assert Email.get_by_id(email.id).template_id == existing.id
 
 

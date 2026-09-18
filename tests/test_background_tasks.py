@@ -5,32 +5,118 @@
 
 from contextlib import contextmanager
 from datetime import date
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
-from celery.exceptions import Ignore
+from celery.exceptions import Ignore, Retry
 
 from aggregator import background_tasks
+from aggregator.email_pull import CredentialsError
 from aggregator.email_sync import SyncResult
 from aggregator.template_assignment import TemplateAssignmentResult
 from aggregator.transaction_extraction import TransactionExtractionResult
 
 
 def test_sync_task_serializes_operation_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
+    events: list[object] = []
 
     def sync(from_date: date) -> SyncResult:
-        captured.update(from_date=from_date)
+        events.append(("sync", from_date))
         return SyncResult(pulled=3, inserted=2, already_stored=1)
 
     monkeypatch.setattr(background_tasks, "sync_messages", sync)
+    monkeypatch.setattr(
+        background_tasks,
+        "queue_email_template_assignment",
+        lambda: events.append("queue assignment") or SimpleNamespace(id="assignment-job"),
+    )
 
     assert background_tasks.sync_email_task.run("2026-09-01") == {
         "pulled": 3,
         "inserted": 2,
         "already_stored": 1,
+        "template_assignment_job_id": "assignment-job",
     }
-    assert captured == {"from_date": date(2026, 9, 1)}
+    assert events == [("sync", date(2026, 9, 1)), "queue assignment"]
+
+
+def test_zero_insert_sync_still_queues_template_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        background_tasks,
+        "sync_messages",
+        lambda _: SyncResult(pulled=3, inserted=0, already_stored=3),
+    )
+    queued: list[bool] = []
+    monkeypatch.setattr(
+        background_tasks,
+        "queue_email_template_assignment",
+        lambda: queued.append(True) or SimpleNamespace(id="assignment-job"),
+    )
+
+    result = background_tasks.sync_email_task.run("2026-09-01")
+
+    assert result["template_assignment_job_id"] == "assignment-job"
+    assert queued == [True]
+
+
+def test_sync_failure_does_not_queue_template_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_sync(_: date) -> SyncResult:
+        raise CredentialsError("credentials unavailable")
+
+    monkeypatch.setattr(background_tasks, "sync_messages", fail_sync)
+    monkeypatch.setattr(
+        background_tasks,
+        "queue_email_template_assignment",
+        lambda: pytest.fail("assignment was queued"),
+    )
+
+    with pytest.raises(CredentialsError, match="credentials unavailable"):
+        background_tasks.sync_email_task.run("2026-09-01")
+
+
+def test_sync_submission_retry_keeps_completed_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync_calls = 0
+    queue_calls = 0
+    retry_args: tuple[object, ...] | None = None
+
+    def sync(_: date) -> SyncResult:
+        nonlocal sync_calls
+        sync_calls += 1
+        return SyncResult(pulled=2, inserted=1, already_stored=1)
+
+    def queue() -> object:
+        nonlocal queue_calls
+        queue_calls += 1
+        if queue_calls == 1:
+            raise RuntimeError("broker unavailable")
+        return SimpleNamespace(id="assignment-job")
+
+    def retry(**options: object) -> Retry:
+        nonlocal retry_args
+        retry_args = cast(tuple[object, ...], options["args"])
+        return Retry()
+
+    monkeypatch.setattr(background_tasks, "sync_messages", sync)
+    monkeypatch.setattr(background_tasks, "queue_email_template_assignment", queue)
+    monkeypatch.setattr(background_tasks.sync_email_task, "retry", retry)
+
+    with pytest.raises(Retry):
+        background_tasks.sync_email_task.run("2026-09-01")
+    assert retry_args is not None
+    assert background_tasks.sync_email_task.run(*retry_args) == {
+        "pulled": 2,
+        "inserted": 1,
+        "already_stored": 1,
+        "template_assignment_job_id": "assignment-job",
+    }
+    assert sync_calls == 1
 
 
 def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -41,9 +127,19 @@ def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         background_tasks,
         "assign_email_templates",
-        lambda **_: TemplateAssignmentResult(processed=4, skipped=1, templates_created=2),
+        lambda **_: TemplateAssignmentResult(
+            processed=4,
+            skipped=1,
+            templates_created=2,
+            created_template_ids=(10, 20),
+        ),
     )
     monkeypatch.setattr(background_tasks, "current_job_guard", current_job)
+    monkeypatch.setattr(
+        background_tasks.generate_field_parsers_task,
+        "delay",
+        lambda template_id: SimpleNamespace(id=f"parser-{template_id}"),
+    )
     monkeypatch.setattr(
         background_tasks,
         "run_transaction_extraction",
@@ -56,6 +152,11 @@ def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch
         "processed": 4,
         "skipped": 1,
         "templates_created": 2,
+        "created_template_ids": [10, 20],
+        "parser_generation_jobs": [
+            {"template_id": 10, "job_id": "parser-10"},
+            {"template_id": 20, "job_id": "parser-20"},
+        ],
     }
     assert background_tasks.extract_transactions_task.run() == {
         "pending": 8,
@@ -63,6 +164,102 @@ def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch
         "skipped": 1,
         "failed_templates": 1,
         "failed_emails": 2,
+    }
+
+
+def test_template_assignment_with_no_created_templates_queues_no_parsers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    @contextmanager
+    def current_job(_: str) -> Any:
+        yield
+
+    monkeypatch.setattr(background_tasks, "current_job_guard", current_job)
+    monkeypatch.setattr(
+        background_tasks,
+        "assign_email_templates",
+        lambda **_: TemplateAssignmentResult(
+            processed=2,
+            skipped=0,
+            templates_created=0,
+            created_template_ids=(),
+        ),
+    )
+    monkeypatch.setattr(
+        background_tasks.generate_field_parsers_task,
+        "delay",
+        lambda _: pytest.fail("parser was queued"),
+    )
+
+    assert background_tasks.assign_email_templates_task.run("job-1") == {
+        "processed": 2,
+        "skipped": 0,
+        "templates_created": 0,
+        "created_template_ids": [],
+        "parser_generation_jobs": [],
+    }
+
+
+def test_parser_submission_retry_keeps_mining_result_and_completed_jobs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assignment_calls = 0
+    submissions: list[int] = []
+    retry_args: tuple[object, ...] | None = None
+
+    @contextmanager
+    def current_job(_: str) -> Any:
+        yield
+
+    def assign(**_: object) -> TemplateAssignmentResult:
+        nonlocal assignment_calls
+        assignment_calls += 1
+        return TemplateAssignmentResult(
+            processed=5,
+            skipped=1,
+            templates_created=3,
+            created_template_ids=(10, 20, 30),
+        )
+
+    def submit(template_id: int) -> object:
+        submissions.append(template_id)
+        if submissions == [10, 20]:
+            raise RuntimeError("broker unavailable")
+        return SimpleNamespace(id=f"parser-{template_id}")
+
+    def retry(**options: object) -> Retry:
+        nonlocal retry_args
+        retry_args = cast(tuple[object, ...], options["args"])
+        return Retry()
+
+    monkeypatch.setattr(background_tasks, "current_job_guard", current_job)
+    monkeypatch.setattr(background_tasks, "assign_email_templates", assign)
+    monkeypatch.setattr(background_tasks.generate_field_parsers_task, "delay", submit)
+    monkeypatch.setattr(background_tasks.assign_email_templates_task, "retry", retry)
+
+    with pytest.raises(Retry):
+        background_tasks.assign_email_templates_task.run("job-1")
+    assert retry_args is not None
+
+    monkeypatch.setattr(
+        background_tasks,
+        "current_job_guard",
+        lambda _: pytest.fail("latest-wins check repeated after commit"),
+    )
+    result = background_tasks.assign_email_templates_task.run(*retry_args)
+
+    assert assignment_calls == 1
+    assert submissions == [10, 20, 20, 30]
+    assert result == {
+        "processed": 5,
+        "skipped": 1,
+        "templates_created": 3,
+        "created_template_ids": [10, 20, 30],
+        "parser_generation_jobs": [
+            {"template_id": 10, "job_id": "parser-10"},
+            {"template_id": 20, "job_id": "parser-20"},
+            {"template_id": 30, "job_id": "parser-30"},
+        ],
     }
 
 

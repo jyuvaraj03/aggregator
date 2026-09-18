@@ -192,18 +192,6 @@ input::placeholder {
     color: #245d48;
     animation: reveal 0.3s ease-out;
 }
-.extraction-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 28px;
-}
-.extraction-controls p {
-    max-width: 65ch;
-}
-.extraction-controls button {
-    flex-shrink: 0;
-}
 .result-note {
     display: block;
     margin-top: 8px;
@@ -407,11 +395,6 @@ dd {
     }
     .app-nav a {
         padding-inline: 10px;
-    }
-    .extraction-controls {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 20px;
     }
     main {
         padding: 32px 20px 48px;

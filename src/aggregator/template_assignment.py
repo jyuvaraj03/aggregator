@@ -20,6 +20,7 @@ class TemplateAssignmentResult:
     processed: int
     skipped: int
     templates_created: int
+    created_template_ids: tuple[int, ...]
 
 
 def assign_email_templates(
@@ -46,21 +47,23 @@ def assign_email_templates(
         )
         guard = commit_guard() if commit_guard is not None else nullcontext()
         with guard:
-            templates_created = _store_and_assign(result.patterns)
+            created_template_ids = _store_and_assign(result.patterns)
 
     return TemplateAssignmentResult(
         processed=result.processed,
         skipped=len(result.skipped_record_ids),
-        templates_created=templates_created,
+        templates_created=len(created_template_ids),
+        created_template_ids=created_template_ids,
     )
 
 
-def _store_and_assign(patterns: tuple[MinedPattern, ...]) -> int:
+def _store_and_assign(patterns: tuple[MinedPattern, ...]) -> tuple[int, ...]:
     """Persist all template creations and bulk assignments in one transaction."""
-    templates_created = 0
+    created_template_ids: list[int] = []
     with database.atomic():
         for pattern in patterns:
             template, created = Template.get_or_create(text=pattern.text)
-            templates_created += int(created)
+            if created:
+                created_template_ids.append(template.id)
             Email.update(template=template).where(Email.id.in_(pattern.record_ids)).execute()
-    return templates_created
+    return tuple(created_template_ids)

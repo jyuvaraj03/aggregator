@@ -31,24 +31,39 @@ _PERMANENT_ERRORS = (
 )
 
 
-def _retryable(task: object, error: Exception) -> None:
+def _retryable(
+    task: object, error: Exception, *, args: tuple[object, ...] | None = None
+) -> NoReturn:
     if isinstance(error, _PERMANENT_ERRORS):
         raise error
-    raise task.retry(exc=error, countdown=(5, 30)[min(task.request.retries, 1)])
+    countdown = (5, 30)[min(task.request.retries, 1)]
+    if args is None:
+        raise task.retry(exc=error, countdown=countdown)
+    raise task.retry(exc=error, countdown=countdown, args=args)
 
 
 @celery_app.task(bind=True, name="aggregator.email_sync", max_retries=2)
-def sync_email_task(self: object, from_date: str) -> dict[str, int]:
+def sync_email_task(
+    self: object, from_date: str, completed_sync: dict[str, int] | None = None
+) -> dict[str, object]:
     try:
-        result = sync_messages(date.fromisoformat(from_date))
+        if completed_sync is None:
+            result = sync_messages(date.fromisoformat(from_date))
+            completed_sync = {
+                "pulled": result.pulled,
+                "inserted": result.inserted,
+                "already_stored": result.already_stored,
+            }
+        assignment_job = queue_email_template_assignment()
         return {
-            "pulled": result.pulled,
-            "inserted": result.inserted,
-            "already_stored": result.already_stored,
+            **completed_sync,
+            "template_assignment_job_id": assignment_job.id,
         }
     except Exception as error:
-        _retryable(self, error)
-        raise AssertionError("unreachable") from error
+        retry_args: tuple[object, ...] = (from_date,)
+        if completed_sync is not None:
+            retry_args = (from_date, completed_sync)
+        _retryable(self, error, args=retry_args)
 
 
 def queue_email_template_assignment() -> object:
@@ -66,21 +81,45 @@ def _mark_superseded(task: object) -> NoReturn:
 
 
 @celery_app.task(bind=True, name="aggregator.template_assignment", max_retries=2)
-def assign_email_templates_task(self: object, job_id: str) -> dict[str, int]:
+def assign_email_templates_task(
+    self: object,
+    job_id: str,
+    completed_assignment: dict[str, object] | None = None,
+    parser_generation_jobs: list[dict[str, object]] | None = None,
+    outstanding_template_ids: list[int] | None = None,
+) -> dict[str, object]:
+    retry_args: tuple[object, ...] = (job_id,)
     try:
-        with current_job_guard(job_id):
-            pass
-        result = assign_email_templates(commit_guard=lambda: current_job_guard(job_id))
+        if completed_assignment is None:
+            with current_job_guard(job_id):
+                pass
+            result = assign_email_templates(commit_guard=lambda: current_job_guard(job_id))
+            completed_assignment = {
+                "processed": result.processed,
+                "skipped": result.skipped,
+                "templates_created": result.templates_created,
+                "created_template_ids": list(result.created_template_ids),
+            }
+            parser_generation_jobs = []
+            outstanding_template_ids = list(result.created_template_ids)
+
+        completed_jobs = list(parser_generation_jobs or [])
+        outstanding_ids = list(outstanding_template_ids or [])
+        while outstanding_ids:
+            template_id = outstanding_ids[0]
+            retry_args = (job_id, completed_assignment, completed_jobs, outstanding_ids)
+            parser_job = generate_field_parsers_task.delay(template_id)
+            completed_jobs.append({"template_id": template_id, "job_id": parser_job.id})
+            outstanding_ids.pop(0)
+
         return {
-            "processed": result.processed,
-            "skipped": result.skipped,
-            "templates_created": result.templates_created,
+            **completed_assignment,
+            "parser_generation_jobs": completed_jobs,
         }
     except TemplateAssignmentSupersededError:
         _mark_superseded(self)
     except Exception as error:
-        _retryable(self, error)
-        raise AssertionError("unreachable") from error
+        _retryable(self, error, args=retry_args)
 
 
 @celery_app.task(bind=True, name="aggregator.field_parser_generation", max_retries=2)
@@ -102,7 +141,6 @@ def generate_field_parsers_task(self: object, template_id: int) -> dict[str, obj
         }
     except Exception as error:
         _retryable(self, error)
-        raise AssertionError("unreachable") from error
 
 
 @celery_app.task(bind=True, name="aggregator.transaction_extraction", max_retries=2)
@@ -118,4 +156,3 @@ def extract_transactions_task(self: object) -> dict[str, int]:
         }
     except Exception as error:
         _retryable(self, error)
-        raise AssertionError("unreachable") from error

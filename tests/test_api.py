@@ -30,9 +30,6 @@ class _QueuedJob:
 def queue_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(actions.sync_email_task, "delay", lambda *_: _QueuedJob("sync-job"))
     monkeypatch.setattr(
-        actions, "queue_email_template_assignment", lambda: _QueuedJob("assignment-job")
-    )
-    monkeypatch.setattr(
         actions.extract_transactions_task, "delay", lambda: _QueuedJob("extraction-job")
     )
     monkeypatch.setattr(
@@ -723,15 +720,11 @@ def test_actions_enqueue_background_jobs(
     sync_schema = app.openapi()["components"]["schemas"]["EmailSyncRequest"]
     assert "label" not in sync_schema["properties"]
     assert set(sync_schema["required"]) == {"from_date"}
-    assert client.post("/email-template-assignment").json()["job_id"] == "assignment-job"
+    assert client.post("/email-template-assignment").status_code == 404
     assert client.post("/transaction-extraction").json()["job_id"] == "extraction-job"
 
     def unavailable(*_: object) -> _QueuedJob:
         raise RuntimeError("queue unavailable")
-
-    monkeypatch.setattr(actions, "queue_email_template_assignment", unavailable)
-    unavailable_assignment = client.post("/email-template-assignment")
-    assert unavailable_assignment.status_code == 503
 
     monkeypatch.setattr(actions.sync_email_task, "delay", unavailable)
     unavailable_response = client.post("/email-sync", json={"from_date": "2026-09-01"})

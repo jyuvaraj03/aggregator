@@ -29,8 +29,11 @@ uv run aggregator-worker
 ```
 
 The action POST endpoints return `202 Accepted` with a `job_id` and `status_url`. Poll
-`GET /jobs/{job_id}` until its status is `succeeded`, `failed`, or `superseded`; successful results use
-the action's former response shape. Configure Redis with `AGGREGATOR_REDIS_URL` (default:
+`GET /jobs/{job_id}` until its status is `succeeded`, `failed`, or `superseded`. A successful
+email sync queues template assignment and returns its job ID. Assignment mines every unassigned
+email, then queues one parser-generation job for each template it created and returns those job
+IDs. Each stage remains an independent job; parser generation does not start transaction
+extraction. Configure Redis with `AGGREGATOR_REDIS_URL` (default:
 `redis://127.0.0.1:16379/0` when using the included Compose service). Jobs retry transient failures twice and their results expire
 after seven days.
 

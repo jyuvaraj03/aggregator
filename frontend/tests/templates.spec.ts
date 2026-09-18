@@ -55,153 +55,18 @@ test.beforeEach(async ({ page }) => {
     await mockWorkspace(page);
 });
 
-test("extracts once, shows exact counts, resets pagination and refreshes email assignments", async ({
-    page,
-}) => {
-    let extracted = false;
-    let calls = 0;
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    await page.route("**/api/emails/12", (route) =>
-        route.fulfill({
-            json: { ...email, template_id: extracted ? 7 : null },
-        }),
-    );
-    await page.route("**/api/templates?*", (route) =>
-        route.fulfill({
-            json: paginated(
-                [{ ...template, email_count: extracted ? 53 : 51 }],
-                Number(new URL(route.request().url()).searchParams.get("page")),
-            ),
-        }),
-    );
-    await page.route("**/api/email-template-assignment", async (route) => {
-        calls++;
-        expect(route.request().method()).toBe("POST");
-        expect(route.request().postData()).toBeNull();
-        await gate;
-        extracted = true;
-        await route.fulfill({
-            status: 202,
-            json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
-        });
-    });
-    await page.route("**/api/jobs/extraction-job", (route) =>
-        route.fulfill({
-            json: {
-                job_id: "extraction-job",
-                action: "aggregator.template_assignment",
-                status: "succeeded",
-                result: { processed: 4, skipped: 2, templates_created: 1 },
-                error: null,
-            },
-        }),
-    );
-    await page.goto("/emails/12");
-    await expect(page.getByText("No template assigned")).toBeVisible();
-    await page
-        .getByRole("navigation", { name: "Main navigation" })
-        .getByRole("link", { name: "Templates" })
-        .click();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(page).toHaveURL("/templates?page=2");
-    await page.getByRole("button", { name: "Extract templates", exact: true }).dblclick();
-    await expect(page.getByRole("button", { name: "Extracting…" })).toBeDisabled();
-    await expect(page.getByRole("status")).toContainText("Finding patterns");
-    expect(calls).toBe(1);
-    release();
-    await expect(page.getByRole("status")).toContainText(
-        "4 processed · 2 skipped · 1 templates created",
-    );
-    await expect(page.getByRole("status")).toContainText("empty or whitespace-only bodies");
-    await expect(page).toHaveURL("/templates?page=1");
-    await expect(page.getByText("53 emails", { exact: true })).toBeVisible();
-    await page
-        .getByRole("navigation", { name: "Main navigation" })
-        .getByRole("link", { name: "Emails", exact: true })
-        .click();
-    await page.getByRole("link", { name: /Your account activity/ }).click();
-    await expect(page.getByRole("link", { name: "Template 7", exact: true })).toBeVisible();
-    expect(calls).toBe(1);
-});
-
-test("extraction failure supports manual retry and an empty run", async ({ page }) => {
-    let calls = 0;
+test("empty state explains that syncing creates templates automatically", async ({ page }) => {
     await page.route("**/api/templates?*", (route) => route.fulfill({ json: paginated([], 1, 0) }));
-    await page.route("**/api/email-template-assignment", (route) => {
-        calls++;
-        return route.fulfill(
-            calls === 1
-                ? { status: 503, json: { detail: "Extraction is unavailable. Try again." } }
-                : {
-                      status: 202,
-                      json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
-                  },
-        );
-    });
-    await page.route("**/api/jobs/extraction-job", (route) =>
-        route.fulfill({
-            json: {
-                job_id: "extraction-job",
-                action: "aggregator.template_assignment",
-                status: "succeeded",
-                result: { processed: 0, skipped: 0, templates_created: 0 },
-                error: null,
-            },
-        }),
-    );
     await page.goto("/templates");
     await expect(page.getByRole("heading", { name: "No templates yet" })).toBeVisible();
-    await page.getByRole("button", { name: "Extract templates", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Extraction is unavailable");
-    expect(calls).toBe(1);
-    await page.getByRole("button", { name: "Extract templates", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText(
-        "0 processed · 0 skipped · 0 templates created",
+    await expect(
+        page.getByText("Sync your emails to create templates automatically."),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sync emails" })).toHaveAttribute(
+        "href",
+        "/emails",
     );
-    expect(calls).toBe(2);
-});
-
-test("successful extraction remains visible when the list refresh fails", async ({ page }) => {
-    let extracted = false;
-    await page.route("**/api/templates?*", (route) =>
-        route.fulfill(
-            extracted
-                ? { status: 503, json: { detail: "Templates could not be loaded" } }
-                : { json: paginated([template]) },
-        ),
-    );
-    await page.route("**/api/email-template-assignment", (route) => {
-        extracted = true;
-        return route.fulfill({
-            status: 202,
-            json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
-        });
-    });
-    await page.route("**/api/jobs/extraction-job", (route) =>
-        route.fulfill({
-            json: {
-                job_id: "extraction-job",
-                action: "aggregator.template_assignment",
-                status: "succeeded",
-                result: { processed: 2, skipped: 0, templates_created: 1 },
-                error: null,
-            },
-        }),
-    );
-    await page.goto("/templates");
-    await expect(page.getByRole("link", { name: /Template 7/ })).toBeVisible();
-    await page.getByRole("button", { name: "Extract templates", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("Extraction complete.");
-    await expect(page.getByRole("alert")).toContainText("Templates could not be loaded");
-    await page.route("**/api/templates?*", (route) =>
-        route.fulfill({ json: paginated([template]) }),
-    );
-    await page.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(page.getByRole("status")).toContainText("2 processed");
+    await expect(page.getByRole("button", { name: /Extract templates/ })).toHaveCount(0);
 });
 
 test("template and matching-email pagination survive detail navigation and reload", async ({
@@ -356,50 +221,4 @@ test("email return links reject invalid origins and normalize pagination", async
         "href",
         "/templates/7?page=1&emailsPage=1",
     );
-});
-
-test("navigating during extraction does not redirect and prevents a second run", async ({
-    page,
-}) => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    let calls = 0;
-    await page.route("**/api/email-template-assignment", async (route) => {
-        calls++;
-        await gate;
-        await route.fulfill({
-            status: 202,
-            json: { job_id: "extraction-job", status_url: "/jobs/extraction-job" },
-        });
-    });
-    await page.route("**/api/jobs/extraction-job", (route) =>
-        route.fulfill({
-            json: {
-                job_id: "extraction-job",
-                action: "aggregator.template_assignment",
-                status: "succeeded",
-                result: { processed: 1, skipped: 0, templates_created: 0 },
-                error: null,
-            },
-        }),
-    );
-    await page.goto("/templates?page=2");
-    await page.getByRole("button", { name: "Extract templates", exact: true }).click();
-    await page
-        .getByRole("navigation", { name: "Main navigation" })
-        .getByRole("link", { name: "Emails", exact: true })
-        .click();
-    await page
-        .getByRole("navigation", { name: "Main navigation" })
-        .getByRole("link", { name: "Templates", exact: true })
-        .click();
-    await expect(page.getByRole("button", { name: "Extracting…" })).toBeDisabled();
-    release();
-    await expect(
-        page.getByRole("button", { name: "Extract templates", exact: true }),
-    ).toBeEnabled();
-    await expect(page).toHaveURL("/templates");
-    expect(calls).toBe(1);
 });

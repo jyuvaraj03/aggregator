@@ -160,12 +160,6 @@ class EmailSyncRequest(BaseModel):
     from_date: date
 
 
-class TemplateAssignmentResponse(BaseModel):
-    processed: int
-    skipped: int
-    templates_created: int
-
-
 class TransactionExtractionResponse(BaseModel):
     pending: int
     created: int

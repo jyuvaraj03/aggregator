@@ -6,6 +6,7 @@ export type SyncResult = {
     pulled: number;
     inserted: number;
     already_stored: number;
+    template_assignment_job_id: string;
 };
 
 export const emailKeys = { all: ["emails"] as const };
@@ -57,6 +58,7 @@ function isSyncResult(value: object | null | undefined): value is SyncResult {
         result !== null &&
         typeof result.pulled === "number" &&
         typeof result.inserted === "number" &&
-        typeof result.already_stored === "number"
+        typeof result.already_stored === "number" &&
+        typeof result.template_assignment_job_id === "string"
     );
 }

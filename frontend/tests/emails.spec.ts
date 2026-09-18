@@ -59,7 +59,12 @@ test("sync blocks duplicates, shows exact counts and refreshes page one", async 
                 job_id: "sync-job",
                 action: "aggregator.email_sync",
                 status: "succeeded",
-                result: { pulled: 7, inserted: 3, already_stored: 4 },
+                result: {
+                    pulled: 7,
+                    inserted: 3,
+                    already_stored: 4,
+                    template_assignment_job_id: "assignment-job",
+                },
                 error: null,
             },
         });
@@ -75,6 +80,13 @@ test("sync blocks duplicates, shows exact counts and refreshes page one", async 
     release();
     await expect(page.getByRole("status")).toContainText(
         "7 pulled · 3 inserted · 4 already stored",
+    );
+    await expect(page.getByRole("status")).toContainText(
+        "Template mining and parser generation are continuing in the background.",
+    );
+    await expect(page.getByRole("link", { name: "View templates" })).toHaveAttribute(
+        "href",
+        "/templates",
     );
     await expect(page).toHaveURL(/page=1/);
     await expect(page.getByText("Newly stored receipt")).toBeVisible();
@@ -102,7 +114,12 @@ test("sync failure preserves inputs and permits a successful retry", async ({ pa
                 job_id: "sync-job",
                 action: "aggregator.email_sync",
                 status: "succeeded",
-                result: { pulled: 0, inserted: 0, already_stored: 0 },
+                result: {
+                    pulled: 0,
+                    inserted: 0,
+                    already_stored: 0,
+                    template_assignment_job_id: "assignment-job",
+                },
                 error: null,
             },
         }),

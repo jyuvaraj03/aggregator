@@ -28,10 +28,9 @@ inserted, and already-stored counts.
 Pagination lives in `?page=` and is retained in detail/back links. Received times
 use the browser's locale and timezone. Email bodies are rendered as plain text.
 
-The Templates tab provides an explicit **Extract templates** action. It processes
-all stored emails without a template and reports processed, skipped, and newly
-created template counts. Emails with empty or whitespace-only bodies are skipped;
-emails already assigned keep their template. Failed actions can be retried manually.
+After each successful email sync, the worker mines all stored emails without a template
+and starts parser generation for every newly created template. These later stages continue
+in the background after the sync result appears. Emails already assigned keep their template.
 
 Browse templates at `/templates?page=1`, then open a template to inspect its full
 pattern, example email, and paginated matching messages. Template detail URLs retain
@@ -40,9 +39,8 @@ Links to email details carry `fromTemplate`, `templatePage`, and `emailsPage` so
 **Back to template** returns to the same position. Email details also link to their
 assigned template. Patterns and example bodies are rendered as plain text.
 
-Extraction refreshes template and email caches; its successful result remains
-visible if refreshing the list fails. Template inspection is read-only; parser
-generation, accounts, and transaction extraction are not part of this interface.
+Template inspection is read-only; parser generation progress, accounts, and transaction
+extraction are not part of this interface.
 
 ## API types
 
@@ -68,6 +66,6 @@ npm test
 ```
 
 Playwright starts Vite and mocks every API call in the tests. It checks desktop
-and mobile layouts, sync and extraction counts and retries, pagination, template
+and mobile layouts, sync counts and retries, pagination, template
 and email detail navigation, plain-text rendering, loading, empty, and failure states. Neither Gmail nor
 the local database is touched.

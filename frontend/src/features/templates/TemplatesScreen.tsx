@@ -1,46 +1,13 @@
-import { useEffect, useRef } from "react";
-import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { ErrorState, Pagination, readPage } from "../../components/shared";
-import { errorMessage } from "../../lib/api/client";
-import { emailKeys } from "../emails/queries";
-import { extractionKey, extractTemplates, templateKeys, templatePageOptions } from "./queries";
+import { templatePageOptions } from "./queries";
 import { templateHref } from "./navigation";
 
 export function TemplatesScreen() {
     const [search, setSearch] = useSearchParams();
     const page = readPage(search.get("page"));
     const templates = useQuery(templatePageOptions(page));
-    const client = useQueryClient();
-    const submitting = useRef(false);
-    const mounted = useRef(true);
-    useEffect(() => {
-        mounted.current = true;
-        return () => {
-            mounted.current = false;
-        };
-    }, []);
-    const extracting = useIsMutating({ mutationKey: extractionKey }) > 0;
-    const extraction = useMutation({
-        mutationKey: extractionKey,
-        mutationFn: extractTemplates,
-        retry: false,
-        onSuccess: async () => {
-            // Discard pre-extraction reads before refreshing assignments and counts.
-            await Promise.all(
-                [emailKeys.all, templateKeys.all].map(async (queryKey) => {
-                    await client.cancelQueries({ queryKey });
-                    await client.invalidateQueries({ queryKey, refetchType: "none" });
-                }),
-            );
-            if (mounted.current) setSearch({ page: "1" });
-            // Read errors belong to the list; a successful extraction stays successful.
-            await Promise.all([
-                client.refetchQueries({ queryKey: emailKeys.all, type: "active" }),
-                client.refetchQueries({ queryKey: templateKeys.all, type: "active" }),
-            ]);
-        },
-    });
 
     return (
         <>
@@ -48,55 +15,6 @@ export function TemplatesScreen() {
                 <h1>Templates</h1>
                 <p>Find reusable patterns in your emails. Inspect the messages they match.</p>
             </header>
-            <section className="sync-panel" aria-labelledby="extract-heading">
-                <div className="extraction-controls">
-                    <div>
-                        <h2 id="extract-heading">Extract templates</h2>
-                        <p>
-                            Process all stored emails without a template. Emails already assigned
-                            keep their template.
-                        </p>
-                    </div>
-                    <button
-                        disabled={extracting}
-                        onClick={async () => {
-                            if (submitting.current || extracting) return;
-                            submitting.current = true;
-                            try {
-                                await extraction.mutateAsync();
-                            } catch {
-                                /* Display the mutation error below. */
-                            } finally {
-                                submitting.current = false;
-                            }
-                        }}
-                    >
-                        {extracting ? "Extracting…" : "Extract templates"}
-                    </button>
-                </div>
-                {extracting && (
-                    <p role="status">
-                        Finding patterns and assigning templates. This may take a moment.
-                    </p>
-                )}
-                {extraction.isError && (
-                    <p className="error sync-message" role="alert">
-                        {errorMessage(extraction.error)}
-                    </p>
-                )}
-                {extraction.isSuccess && (
-                    <p className="success sync-message" role="status">
-                        <strong>Extraction complete.</strong> {extraction.data.processed} processed
-                        · {extraction.data.skipped} skipped · {extraction.data.templates_created}{" "}
-                        templates created
-                        {extraction.data.skipped > 0 && (
-                            <span className="result-note">
-                                Emails with empty or whitespace-only bodies were skipped.
-                            </span>
-                        )}
-                    </p>
-                )}
-            </section>
             <section
                 className="email-list"
                 aria-labelledby="templates-heading"
@@ -166,11 +84,11 @@ export function TemplatesScreen() {
                                 </h3>
                                 <p>
                                     {templates.data.total === 0
-                                        ? "Sync your emails, then extract templates using the button above."
+                                        ? "Sync your emails to create templates automatically."
                                         : "Return to the first page to browse templates."}
                                 </p>
                                 {templates.data.total === 0 && (
-                                    <Link to="/emails">Go to emails</Link>
+                                    <Link to="/emails">Sync emails</Link>
                                 )}
                                 {page > 1 && <Link to="/templates?page=1">Go to first page</Link>}
                             </div>
