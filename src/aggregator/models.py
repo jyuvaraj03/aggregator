@@ -85,6 +85,7 @@ class Template(Model):
 
     id = AutoField()
     text = TextField()
+    is_transaction_alert = BooleanField(null=True)
     transaction_extraction_status = CharField(default=TransactionExtractionStatus.PENDING.value)
     transaction_extraction_error = TextField(null=True)
     account = ForeignKeyField(Account, null=True, backref="templates", on_delete="SET NULL")

@@ -83,6 +83,7 @@ class TemplateEmailExample(BaseModel):
 class TemplateResponse(BaseModel):
     id: int
     text: str
+    is_transaction_alert: bool | None
     email_count: int
     account_id: int | None
 

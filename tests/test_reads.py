@@ -16,6 +16,7 @@ from aggregator.api import serializers
 from aggregator.database import PROJECT_ROOT, close_database, database, database_connection
 from aggregator.field_parsers import (
     FieldParserGenerationError,
+    TemplateNotTransactionAlertError,
     field_parser_snapshot,
     generate_and_replace_field_parsers,
     replace_field_parsers,
@@ -215,6 +216,7 @@ def test_generation_uses_earliest_email_after_releasing_connection(
     with database_connection():
         template = Template.create(
             text="Paid <CURRENCY_CODE><NUMBER>",
+            is_transaction_alert=True,
             transaction_extraction_status="failed",
             transaction_extraction_error="old failure",
         )
@@ -265,7 +267,7 @@ def test_generation_uses_earliest_email_after_releasing_connection(
 
 def test_generation_failure_preserves_existing_parsers(monkeypatch: pytest.MonkeyPatch) -> None:
     with database_connection():
-        template = Template.create(text="Paid <NUMBER>")
+        template = Template.create(text="Paid <NUMBER>", is_transaction_alert=True)
         _assign_account(template)
         _email(1, template)
     original = replace_field_parsers(template.id, _parsers())
@@ -294,6 +296,31 @@ def test_missing_template_does_not_invoke_generation(monkeypatch: pytest.MonkeyP
     )
     with pytest.raises(TemplateNotFoundError, match="Template not found"):
         generate_and_replace_field_parsers(999)
+    assert database.is_closed()
+
+
+@pytest.mark.parametrize("classification", [False, None])
+def test_generation_rejects_templates_not_classified_as_transaction_alerts(
+    monkeypatch: pytest.MonkeyPatch, classification: bool | None
+) -> None:
+    with database_connection():
+        template = Template.create(text="Paid <NUMBER>", is_transaction_alert=classification)
+        _email(1, template)
+
+    def unexpected_generation(*_: object) -> None:
+        pytest.fail("Generation should not run")
+
+    monkeypatch.setattr(
+        field_parsers.parser_generation,
+        "generate_field_parsers",
+        unexpected_generation,
+    )
+
+    with pytest.raises(
+        TemplateNotTransactionAlertError,
+        match="not classified as a transaction alert",
+    ):
+        generate_and_replace_field_parsers(template.id)
     assert database.is_closed()
 
 

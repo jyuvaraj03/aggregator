@@ -9,3 +9,13 @@ post {
   body: none
   auth: none
 }
+
+docs {
+  Parser generation is accepted only when the template has been classified as a
+  transaction alert. Unclassified templates and templates classified as non-alerts
+  return `409 Conflict`:
+
+  ```json
+  {"detail":"Template is not classified as a transaction alert"}
+  ```
+}

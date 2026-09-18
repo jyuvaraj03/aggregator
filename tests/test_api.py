@@ -254,8 +254,20 @@ def test_template_counts_and_missing_resource(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["total"] == 2
     assert response.json()["items"] == [
-        {"id": second.id, "text": "second", "email_count": 0, "account_id": None},
-        {"id": first.id, "text": "first", "email_count": 2, "account_id": None},
+        {
+            "id": second.id,
+            "text": "second",
+            "is_transaction_alert": None,
+            "email_count": 0,
+            "account_id": None,
+        },
+        {
+            "id": first.id,
+            "text": "first",
+            "is_transaction_alert": None,
+            "email_count": 2,
+            "account_id": None,
+        },
     ]
     assert client.get("/templates/999").status_code == 404
 
@@ -272,6 +284,7 @@ def test_template_detail_includes_earliest_email_as_example(client: TestClient) 
     assert response.json() == {
         "id": template.id,
         "text": "receipt",
+        "is_transaction_alert": None,
         "email_count": 2,
         "account_id": None,
         "example": {
@@ -305,6 +318,7 @@ def test_template_account_assignment_reassignment_and_unassignment(client: TestC
     assert assigned.json() == {
         "id": selected.id,
         "text": "selected",
+        "is_transaction_alert": None,
         "email_count": 2,
         "account_id": first_account.id,
     }
@@ -515,6 +529,7 @@ def test_generate_field_parsers_endpoint_replaces_and_previews(
 ) -> None:
     template = Template.create(
         text="Paid <CURRENCY_CODE><NUMBER>",
+        is_transaction_alert=True,
         transaction_extraction_status="failed",
         transaction_extraction_error="old failure",
     )
@@ -554,7 +569,7 @@ def test_generate_field_parsers_endpoint_replaces_and_previews(
 def test_generate_field_parsers_endpoint_failures(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    template = Template.create(text="Paid <NUMBER>")
+    template = Template.create(text="Paid <NUMBER>", is_transaction_alert=True)
     _email(1, template=template)
     FieldParser.create(
         template=template,
@@ -582,6 +597,29 @@ def test_generate_field_parsers_endpoint_failures(
     assert missing.status_code == 404
     assert missing.json() == {"detail": "Template not found"}
     assert calls == 0
+
+
+@pytest.mark.parametrize("classification", [False, None])
+def test_generate_field_parsers_endpoint_rejects_ineligible_templates(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    classification: bool | None,
+) -> None:
+    template = Template.create(text="Paid <NUMBER>", is_transaction_alert=classification)
+    queued = False
+
+    def queue(_: int) -> _QueuedJob:
+        nonlocal queued
+        queued = True
+        return _QueuedJob()
+
+    monkeypatch.setattr(field_parser_routes.generate_field_parsers_task, "delay", queue)
+
+    response = client.post(f"/templates/{template.id}/field-parsers/generate")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Template is not classified as a transaction alert"}
+    assert queued is False
 
 
 def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient) -> None:

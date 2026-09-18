@@ -86,6 +86,7 @@ def template_response(template: TemplateRecord) -> TemplateResponse:
     return TemplateResponse(
         id=template.id,
         text=template.text,
+        is_transaction_alert=template.is_transaction_alert,
         email_count=template.email_count,
         account_id=template.account_id,
     )

@@ -161,7 +161,7 @@ def test_readable_email_body_migration_discards_legacy_fields(tmp_path: Path) ->
         ),
     )
 
-    runner.up()
+    runner.up("0009_store_readable_email_body")
 
     assert [column.name for column in database.get_columns("emails")] == [
         "id",
@@ -185,3 +185,34 @@ def test_readable_email_body_migration_discards_legacy_fields(tmp_path: Path) ->
         "headers",
         "authentication_status",
     }.issubset(columns)
+
+
+def test_template_classification_migration_is_nullable_and_reversible(tmp_path: Path) -> None:
+    database = SqliteDatabase(str(tmp_path / "migration.sqlite3"), pragmas={"foreign_keys": 1})
+    runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
+    runner.up("0009_store_readable_email_body")
+    database.execute_sql(
+        "INSERT INTO templates (text, transaction_extraction_status) VALUES (?, ?)",
+        ("Paid <NUMBER>", "pending"),
+    )
+
+    runner.up()
+
+    columns = {column.name: column for column in database.get_columns("templates")}
+    assert columns["is_transaction_alert"].null is True
+    assert database.execute_sql(
+        "SELECT is_transaction_alert FROM templates WHERE id = 1"
+    ).fetchone() == (None,)
+    database.execute_sql(
+        "INSERT INTO templates (text, transaction_extraction_status) VALUES (?, ?)",
+        ("Received <NUMBER>", "pending"),
+    )
+    assert database.execute_sql(
+        "SELECT is_transaction_alert FROM templates WHERE id = 2"
+    ).fetchone() == (None,)
+
+    runner.down()
+
+    assert "is_transaction_alert" not in {
+        column.name for column in database.get_columns("templates")
+    }

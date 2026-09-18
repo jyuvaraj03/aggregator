@@ -21,6 +21,7 @@ from .template_assignment_queue import (
     current_job_guard,
     publish_as_latest,
 )
+from .template_classification import classify_template
 from .transaction_extraction import run_transaction_extraction
 
 _PERMANENT_ERRORS = (
@@ -85,7 +86,7 @@ def assign_email_templates_task(
     self: object,
     job_id: str,
     completed_assignment: dict[str, object] | None = None,
-    parser_generation_jobs: list[dict[str, object]] | None = None,
+    template_classification_jobs: list[dict[str, object]] | None = None,
     outstanding_template_ids: list[int] | None = None,
 ) -> dict[str, object]:
     retry_args: tuple[object, ...] = (job_id,)
@@ -100,24 +101,53 @@ def assign_email_templates_task(
                 "templates_created": result.templates_created,
                 "created_template_ids": list(result.created_template_ids),
             }
-            parser_generation_jobs = []
+            template_classification_jobs = []
             outstanding_template_ids = list(result.created_template_ids)
 
-        completed_jobs = list(parser_generation_jobs or [])
+        completed_jobs = list(template_classification_jobs or [])
         outstanding_ids = list(outstanding_template_ids or [])
         while outstanding_ids:
             template_id = outstanding_ids[0]
             retry_args = (job_id, completed_assignment, completed_jobs, outstanding_ids)
-            parser_job = generate_field_parsers_task.delay(template_id)
-            completed_jobs.append({"template_id": template_id, "job_id": parser_job.id})
+            classification_job = classify_template_task.delay(template_id)
+            completed_jobs.append({"template_id": template_id, "job_id": classification_job.id})
             outstanding_ids.pop(0)
 
         return {
             **completed_assignment,
-            "parser_generation_jobs": completed_jobs,
+            "template_classification_jobs": completed_jobs,
         }
     except TemplateAssignmentSupersededError:
         _mark_superseded(self)
+    except Exception as error:
+        _retryable(self, error, args=retry_args)
+
+
+@celery_app.task(bind=True, name="aggregator.template_classification", max_retries=2)
+def classify_template_task(
+    self: object,
+    template_id: int,
+    completed_classification: dict[str, object] | None = None,
+) -> dict[str, object]:
+    retry_args: tuple[object, ...] = (template_id,)
+    try:
+        if completed_classification is None:
+            result = classify_template(template_id)
+            completed_classification = {
+                "template_id": result.template_id,
+                "is_transaction_alert": result.is_transaction_alert,
+            }
+
+        parser_generation_job_id: str | None = None
+        if completed_classification["is_transaction_alert"] is True:
+            retry_args = (template_id, completed_classification)
+            parser_job = generate_field_parsers_task.delay(template_id)
+            parser_generation_job_id = parser_job.id
+
+        return {
+            **completed_classification,
+            "parser_generation_job_id": parser_generation_job_id,
+        }
     except Exception as error:
         _retryable(self, error, args=retry_args)
 

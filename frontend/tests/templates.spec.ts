@@ -6,6 +6,7 @@ const pattern =
 const template: components["schemas"]["TemplateResponse"] = {
     id: 7,
     text: pattern,
+    is_transaction_alert: null,
     email_count: 51,
     account_id: null,
 };

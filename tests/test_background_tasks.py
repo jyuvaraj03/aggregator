@@ -136,9 +136,9 @@ def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch
     )
     monkeypatch.setattr(background_tasks, "current_job_guard", current_job)
     monkeypatch.setattr(
-        background_tasks.generate_field_parsers_task,
+        background_tasks.classify_template_task,
         "delay",
-        lambda template_id: SimpleNamespace(id=f"parser-{template_id}"),
+        lambda template_id: SimpleNamespace(id=f"classification-{template_id}"),
     )
     monkeypatch.setattr(
         background_tasks,
@@ -153,9 +153,9 @@ def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch
         "skipped": 1,
         "templates_created": 2,
         "created_template_ids": [10, 20],
-        "parser_generation_jobs": [
-            {"template_id": 10, "job_id": "parser-10"},
-            {"template_id": 20, "job_id": "parser-20"},
+        "template_classification_jobs": [
+            {"template_id": 10, "job_id": "classification-10"},
+            {"template_id": 20, "job_id": "classification-20"},
         ],
     }
     assert background_tasks.extract_transactions_task.run() == {
@@ -167,7 +167,7 @@ def test_other_tasks_serialize_operation_results(monkeypatch: pytest.MonkeyPatch
     }
 
 
-def test_template_assignment_with_no_created_templates_queues_no_parsers(
+def test_template_assignment_with_no_created_templates_queues_no_classifications(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     @contextmanager
@@ -186,9 +186,9 @@ def test_template_assignment_with_no_created_templates_queues_no_parsers(
         ),
     )
     monkeypatch.setattr(
-        background_tasks.generate_field_parsers_task,
+        background_tasks.classify_template_task,
         "delay",
-        lambda _: pytest.fail("parser was queued"),
+        lambda _: pytest.fail("classification was queued"),
     )
 
     assert background_tasks.assign_email_templates_task.run("job-1") == {
@@ -196,11 +196,11 @@ def test_template_assignment_with_no_created_templates_queues_no_parsers(
         "skipped": 0,
         "templates_created": 0,
         "created_template_ids": [],
-        "parser_generation_jobs": [],
+        "template_classification_jobs": [],
     }
 
 
-def test_parser_submission_retry_keeps_mining_result_and_completed_jobs(
+def test_classification_submission_retry_keeps_mining_result_and_completed_jobs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assignment_calls = 0
@@ -225,7 +225,7 @@ def test_parser_submission_retry_keeps_mining_result_and_completed_jobs(
         submissions.append(template_id)
         if submissions == [10, 20]:
             raise RuntimeError("broker unavailable")
-        return SimpleNamespace(id=f"parser-{template_id}")
+        return SimpleNamespace(id=f"classification-{template_id}")
 
     def retry(**options: object) -> Retry:
         nonlocal retry_args
@@ -234,7 +234,7 @@ def test_parser_submission_retry_keeps_mining_result_and_completed_jobs(
 
     monkeypatch.setattr(background_tasks, "current_job_guard", current_job)
     monkeypatch.setattr(background_tasks, "assign_email_templates", assign)
-    monkeypatch.setattr(background_tasks.generate_field_parsers_task, "delay", submit)
+    monkeypatch.setattr(background_tasks.classify_template_task, "delay", submit)
     monkeypatch.setattr(background_tasks.assign_email_templates_task, "retry", retry)
 
     with pytest.raises(Retry):
@@ -255,12 +255,100 @@ def test_parser_submission_retry_keeps_mining_result_and_completed_jobs(
         "skipped": 1,
         "templates_created": 3,
         "created_template_ids": [10, 20, 30],
-        "parser_generation_jobs": [
-            {"template_id": 10, "job_id": "parser-10"},
-            {"template_id": 20, "job_id": "parser-20"},
-            {"template_id": 30, "job_id": "parser-30"},
+        "template_classification_jobs": [
+            {"template_id": 10, "job_id": "classification-10"},
+            {"template_id": 20, "job_id": "classification-20"},
+            {"template_id": 30, "job_id": "classification-30"},
         ],
     }
+
+
+@pytest.mark.parametrize("classification", [False, None])
+def test_classification_task_does_not_queue_parser_for_ineligible_result(
+    monkeypatch: pytest.MonkeyPatch, classification: bool | None
+) -> None:
+    from aggregator.template_classification import TemplateClassificationResult
+
+    monkeypatch.setattr(
+        background_tasks,
+        "classify_template",
+        lambda template_id: TemplateClassificationResult(template_id, classification),
+    )
+    monkeypatch.setattr(
+        background_tasks.generate_field_parsers_task,
+        "delay",
+        lambda _: pytest.fail("parser was queued"),
+    )
+
+    assert background_tasks.classify_template_task.run(12) == {
+        "template_id": 12,
+        "is_transaction_alert": classification,
+        "parser_generation_job_id": None,
+    }
+
+
+def test_classification_task_queues_parser_for_transaction_alert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aggregator.template_classification import TemplateClassificationResult
+
+    monkeypatch.setattr(
+        background_tasks,
+        "classify_template",
+        lambda template_id: TemplateClassificationResult(template_id, True),
+    )
+    monkeypatch.setattr(
+        background_tasks.generate_field_parsers_task,
+        "delay",
+        lambda template_id: SimpleNamespace(id=f"parser-{template_id}"),
+    )
+
+    assert background_tasks.classify_template_task.run(12) == {
+        "template_id": 12,
+        "is_transaction_alert": True,
+        "parser_generation_job_id": "parser-12",
+    }
+
+
+def test_parser_submission_retry_keeps_completed_classification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aggregator.template_classification import TemplateClassificationResult
+
+    classification_calls = 0
+    submissions = 0
+    retry_args: tuple[object, ...] | None = None
+
+    def classify(template_id: int) -> TemplateClassificationResult:
+        nonlocal classification_calls
+        classification_calls += 1
+        return TemplateClassificationResult(template_id, True)
+
+    def submit(_: int) -> object:
+        nonlocal submissions
+        submissions += 1
+        if submissions == 1:
+            raise RuntimeError("broker unavailable")
+        return SimpleNamespace(id="parser-12")
+
+    def retry(**options: object) -> Retry:
+        nonlocal retry_args
+        retry_args = cast(tuple[object, ...], options["args"])
+        return Retry()
+
+    monkeypatch.setattr(background_tasks, "classify_template", classify)
+    monkeypatch.setattr(background_tasks.generate_field_parsers_task, "delay", submit)
+    monkeypatch.setattr(background_tasks.classify_template_task, "retry", retry)
+
+    with pytest.raises(Retry):
+        background_tasks.classify_template_task.run(12)
+    assert retry_args is not None
+    assert background_tasks.classify_template_task.run(*retry_args) == {
+        "template_id": 12,
+        "is_transaction_alert": True,
+        "parser_generation_job_id": "parser-12",
+    }
+    assert classification_calls == 1
 
 
 def test_template_assignment_queue_uses_one_id_for_marker_and_task(

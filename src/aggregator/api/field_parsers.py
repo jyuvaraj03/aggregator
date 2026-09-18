@@ -6,7 +6,12 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..background_tasks import generate_field_parsers_task
-from ..field_parsers import field_parser_snapshot, replace_field_parsers
+from ..field_parsers import (
+    TemplateNotTransactionAlertError,
+    field_parser_snapshot,
+    replace_field_parsers,
+    require_parser_generation_eligible,
+)
 from ..parser_configuration import FieldParserSet
 from ..queries import TemplateNotFoundError
 from .schemas import BackgroundJobResponse, TemplateFieldParsersResponse
@@ -41,9 +46,10 @@ def put_field_parsers(
 )
 def post_generate_field_parsers(template_id: int, response: Response) -> BackgroundJobResponse:
     try:
-        # Validate existence before accepting a job that cannot ever run.
-        field_parser_snapshot(template_id)
+        require_parser_generation_eligible(template_id)
         job = generate_field_parsers_task.delay(template_id)
+    except TemplateNotTransactionAlertError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except HTTPException, TemplateNotFoundError:
         raise
     except Exception as error:

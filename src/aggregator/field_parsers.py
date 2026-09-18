@@ -22,6 +22,20 @@ class FieldParserGenerationError(Exception):
     """Parser inference could not produce a configuration to persist."""
 
 
+class TemplateNotTransactionAlertError(FieldParserGenerationError):
+    """The template is not eligible for automatic parser generation."""
+
+
+def require_parser_generation_eligible(template_id: int) -> None:
+    """Reject templates not explicitly classified as transaction alerts."""
+    with database_connection():
+        template = queries.require_template(template_id)
+        if template.is_transaction_alert is not True:
+            raise TemplateNotTransactionAlertError(
+                "Template is not classified as a transaction alert"
+            )
+
+
 def _snapshot(template: Template, parsers: FieldParserSet) -> ParserSnapshot:
     masks = template_parameter_masks(template.text)
     example = queries.example_email(template.id)
@@ -58,6 +72,10 @@ def generate_and_replace_field_parsers(template_id: int) -> ParserSnapshot:
     """Infer parsers from the earliest email, then atomically replace the stored set."""
     with database_connection():
         template = queries.require_template(template_id)
+        if template.is_transaction_alert is not True:
+            raise TemplateNotTransactionAlertError(
+                "Template is not classified as a transaction alert"
+            )
         example = queries.example_email(template.id)
         if example is None:
             raise RuntimeError("Template has no associated email")

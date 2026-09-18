@@ -490,6 +490,8 @@ export interface components {
             id: number;
             /** Text */
             text: string;
+            /** Is Transaction Alert */
+            is_transaction_alert: boolean | null;
             /** Email Count */
             email_count: number;
             /** Account Id */
@@ -555,6 +557,8 @@ export interface components {
             id: number;
             /** Text */
             text: string;
+            /** Is Transaction Alert */
+            is_transaction_alert: boolean | null;
             /** Email Count */
             email_count: number;
             /** Account Id */

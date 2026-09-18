@@ -36,7 +36,7 @@ docs {
   ```
 
   Check `assignment-job` through the same job endpoint. Its result links every newly
-  created template to its independent parser-generation job:
+  created template to its independent classification job:
 
   ```json
   {
@@ -44,12 +44,23 @@ docs {
     "skipped": 0,
     "templates_created": 1,
     "created_template_ids": [12],
-    "parser_generation_jobs": [
-      {"template_id": 12, "job_id": "parser-job"}
+    "template_classification_jobs": [
+      {"template_id": 12, "job_id": "classification-job"}
     ]
   }
   ```
 
-  Check each parser `job_id` separately. Parser failures do not change the completed sync
-  or template-assignment results, and transaction extraction is not started automatically.
+  Check each classification `job_id` separately. A classification result includes
+  `is_transaction_alert` and queues parser generation only when that value is `true`:
+
+  ```json
+  {
+    "template_id": 12,
+    "is_transaction_alert": true,
+    "parser_generation_job_id": "parser-job"
+  }
+  ```
+
+  Classification or parser failures do not change the completed sync or template-assignment
+  results, and transaction extraction is not started automatically.
 }

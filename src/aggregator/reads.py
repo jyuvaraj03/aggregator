@@ -88,6 +88,7 @@ def _template_record(template: Template) -> TemplateRecord:
     return TemplateRecord(
         template.id,
         template.text,
+        template.is_transaction_alert,
         int(vars(template)["email_count"]),
         template.account_id,
     )
