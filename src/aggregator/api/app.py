@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from ..email_pull import ConfigurationError, CredentialsError, GmailRequestError, InvalidInputError
+from ..email_pull import CredentialsError, GmailRequestError, InvalidInputError
 from ..queries import TemplateNotFoundError
 from . import accounts, actions, emails, field_parsers, jobs, templates, transactions
 
@@ -27,11 +27,6 @@ def template_not_found_error(_: Request, error: TemplateNotFoundError) -> JSONRe
 @app.exception_handler(InvalidInputError)
 def invalid_input_error(_: Request, error: InvalidInputError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(error)})
-
-
-@app.exception_handler(ConfigurationError)
-def configuration_error(_: Request, error: ConfigurationError) -> JSONResponse:
-    return JSONResponse(status_code=503, content={"detail": str(error)})
 
 
 @app.exception_handler(CredentialsError)

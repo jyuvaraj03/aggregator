@@ -4,7 +4,6 @@ import base64
 import json
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 import pytest
 
@@ -67,12 +66,11 @@ class FakeSession:
         self.closed = True
 
 
-def test_pull_messages_paginates_and_normalizes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_pull_messages_without_label_config_paginates_and_normalizes(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = FakeSession()
-    monkeypatch.setenv("GMAIL_LABEL", " Transactions ")
-    monkeypatch.setattr(email_pull, "DOTENV_PATH", tmp_path / ".env")
+    monkeypatch.delenv("GMAIL_LABEL", raising=False)
     monkeypatch.setattr(email_pull, "_authorized_session", lambda: session)
     messages = email_pull.pull_messages(date(2024, 1, 1))
 
@@ -85,26 +83,10 @@ def test_pull_messages_paginates_and_normalizes(
     assert messages[0].subject == "Receipt"
     assert messages[0].body == "receipt html"
     assert messages[1].body == ""
-    assert session.calls[0][1]["q"] == 'label:"Transactions" after:2024/01/01'
-    assert session.closed
-
-
-@pytest.mark.parametrize("label", [None, "", "   "])
-def test_pull_messages_rejects_missing_or_blank_configured_label(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, label: str | None
-) -> None:
-    if label is None:
-        monkeypatch.delenv("GMAIL_LABEL", raising=False)
-    else:
-        monkeypatch.setenv("GMAIL_LABEL", label)
-    monkeypatch.setattr(email_pull, "DOTENV_PATH", tmp_path / ".env")
-    monkeypatch.setattr(
-        email_pull,
-        "_authorized_session",
-        lambda: pytest.fail("configuration must fail before contacting Gmail"),
+    assert session.calls[0][1]["q"] == (
+        "after:2024/01/01 -category:promotions -category:social -category:forums"
     )
-    with pytest.raises(email_pull.ConfigurationError, match="GMAIL_LABEL"):
-        email_pull.pull_messages(date(2024, 1, 1))
+    assert session.closed
 
 
 @pytest.mark.parametrize(
@@ -117,7 +99,6 @@ def test_pull_messages_rejects_missing_or_blank_configured_label(
 )
 def test_normalize_message_rejects_missing_or_blank_rfc_message_id(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
     headers: list[dict[str, str]],
 ) -> None:
     class MalformedMessageSession(FakeSession):
@@ -134,8 +115,6 @@ def test_normalize_message_rejects_missing_or_blank_rfc_message_id(
             )
 
     session = MalformedMessageSession()
-    monkeypatch.setenv("GMAIL_LABEL", "Transactions")
-    monkeypatch.setattr(email_pull, "DOTENV_PATH", tmp_path / ".env")
     monkeypatch.setattr(email_pull, "_authorized_session", lambda: session)
 
     with pytest.raises(email_pull.MalformedMessageError, match="Message-ID"):

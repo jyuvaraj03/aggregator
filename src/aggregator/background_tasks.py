@@ -12,7 +12,7 @@ from uuid import uuid4
 from celery.exceptions import Ignore
 
 from .celery_app import celery_app
-from .email_pull import ConfigurationError, CredentialsError, InvalidInputError
+from .email_pull import CredentialsError, InvalidInputError
 from .email_sync import sync_messages
 from .field_parsers import FieldParserGenerationError, generate_and_replace_field_parsers
 from .template_assignment import assign_email_templates
@@ -24,7 +24,6 @@ from .template_assignment_queue import (
 from .transaction_extraction import run_transaction_extraction
 
 _PERMANENT_ERRORS = (
-    ConfigurationError,
     CredentialsError,
     FieldParserGenerationError,
     InvalidInputError,

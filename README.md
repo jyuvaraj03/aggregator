@@ -155,8 +155,8 @@ credential files.
 
 This configuration is intended for a local personal Gmail account.
 
-Set `GMAIL_LABEL` in `.env` before syncing. It is required and names the single Gmail label
-that Aggregator reads; surrounding whitespace is ignored.
+Aggregator syncs Gmail messages except those categorized as Promotions, Social, or Forums.
+Gmail's standard search behavior also excludes Spam and Trash.
 
 ## Development
 

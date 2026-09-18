@@ -1,4 +1,4 @@
-"""Read labelled Gmail messages using Google Application Default Credentials.
+"""Read Gmail messages using Google Application Default Credentials.
 
 This module intentionally only retrieves and normalizes messages. Callers own any
 persistence, deduplication, or downstream processing.
@@ -8,16 +8,13 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
 
 import google.auth
-from dotenv import load_dotenv
 from google.auth.credentials import Credentials
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.auth.transport.requests import AuthorizedSession
@@ -27,7 +24,6 @@ from .email_content import readable_body
 
 GMAIL_MESSAGES_URL = "https://www.googleapis.com/gmail/v1/users/me/messages"
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
-DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
 
 class EmailPullError(Exception):
@@ -36,10 +32,6 @@ class EmailPullError(Exception):
 
 class InvalidInputError(EmailPullError):
     """Raised when a public function argument is invalid."""
-
-
-class ConfigurationError(EmailPullError):
-    """Raised when required local Gmail configuration is missing."""
 
 
 class CredentialsError(EmailPullError):
@@ -66,26 +58,15 @@ class EmailMessage:
 
 
 def pull_messages(from_date: date | datetime) -> list[EmailMessage]:
-    """Fetch configured-label Gmail messages received on or after ``from_date``."""
-    label = _gmail_label()
-
+    """Fetch Gmail messages outside the excluded categories from ``from_date`` onward."""
     session = _authorized_session()
     try:
-        message_ids = _fetch_message_ids(label, from_date, session)
+        message_ids = _fetch_message_ids(from_date, session)
         return [
             _normalize_message(_fetch_message(message_id, session)) for message_id in message_ids
         ]
     finally:
         session.close()
-
-
-def _gmail_label() -> str:
-    """Return the required Gmail label from the repository's local environment."""
-    load_dotenv(dotenv_path=DOTENV_PATH)
-    label = os.environ.get("GMAIL_LABEL", "").strip()
-    if not label:
-        raise ConfigurationError("GMAIL_LABEL must be configured with a non-empty Gmail label")
-    return label
 
 
 def _authorized_session() -> AuthorizedSession:
@@ -99,13 +80,12 @@ def _authorized_session() -> AuthorizedSession:
         raise CredentialsError("Google Application Default Credentials are unavailable") from error
 
 
-def _fetch_message_ids(
-    label: str, from_date: date | datetime, session: AuthorizedSession
-) -> list[str]:
+def _fetch_message_ids(from_date: date | datetime, session: AuthorizedSession) -> list[str]:
     ids: list[str] = []
     page_token: str | None = None
-    escaped_label = label.replace('"', '\\"')
-    query = f'label:"{escaped_label}" after:{_format_date(from_date)}'
+    query = (
+        f"after:{_format_date(from_date)} -category:promotions -category:social -category:forums"
+    )
 
     while True:
         params: dict[str, str] = {"q": query}
