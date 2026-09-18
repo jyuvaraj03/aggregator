@@ -42,6 +42,7 @@ class FakeSession:
                         "headers": [
                             {"name": "From", "value": "merchant@example.com"},
                             {"name": "Subject", "value": "Receipt"},
+                            {"name": "mEsSaGe-Id", "value": "  <One@Example.COM>  "},
                         ],
                         "parts": [
                             {"mimeType": "text/plain", "body": {"data": plain}},
@@ -55,7 +56,11 @@ class FakeSession:
             )
         return FakeResponse(
             200,
-            {"id": "two", "internalDate": "1704153600000", "payload": {"headers": []}},
+            {
+                "id": "two",
+                "internalDate": "1704153600000",
+                "payload": {"headers": [{"name": "Message-ID", "value": "<two@example.com>"}]},
+            },
         )
 
     def close(self) -> None:
@@ -71,7 +76,10 @@ def test_pull_messages_paginates_and_normalizes(
     monkeypatch.setattr(email_pull, "_authorized_session", lambda: session)
     messages = email_pull.pull_messages(date(2024, 1, 1))
 
-    assert [message.message_id for message in messages] == ["one", "two"]
+    assert [message.message_id for message in messages] == [
+        "<One@Example.COM>",
+        "<two@example.com>",
+    ]
     assert messages[0].received_at == datetime(2024, 1, 1, tzinfo=UTC)
     assert messages[0].sender == "merchant@example.com"
     assert messages[0].body_text == "receipt text"
@@ -96,3 +104,40 @@ def test_pull_messages_rejects_missing_or_blank_configured_label(
     )
     with pytest.raises(email_pull.ConfigurationError, match="GMAIL_LABEL"):
         email_pull.pull_messages(date(2024, 1, 1))
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [],
+        [{"name": "Message-ID", "value": ""}],
+        [{"name": "message-id", "value": "   \t"}],
+    ],
+)
+def test_normalize_message_rejects_missing_or_blank_rfc_message_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    headers: list[dict[str, str]],
+) -> None:
+    class MalformedMessageSession(FakeSession):
+        def get(self, url: str, *, params: Mapping[str, str], timeout: int) -> FakeResponse:
+            if url == email_pull.GMAIL_MESSAGES_URL:
+                return FakeResponse(200, {"messages": [{"id": "gmail-resource-id"}]})
+            return FakeResponse(
+                200,
+                {
+                    "id": "gmail-resource-id",
+                    "internalDate": "1704067200000",
+                    "payload": {"headers": headers},
+                },
+            )
+
+    session = MalformedMessageSession()
+    monkeypatch.setenv("GMAIL_LABEL", "Transactions")
+    monkeypatch.setattr(email_pull, "DOTENV_PATH", tmp_path / ".env")
+    monkeypatch.setattr(email_pull, "_authorized_session", lambda: session)
+
+    with pytest.raises(email_pull.MalformedMessageError, match="Message-ID"):
+        email_pull.pull_messages(date(2024, 1, 1))
+
+    assert session.closed

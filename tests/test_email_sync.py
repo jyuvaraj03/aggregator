@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 import pytest
@@ -32,7 +33,7 @@ def in_memory_database() -> Generator[None]:
         database.init(str(DATABASE_PATH))  # pyright: ignore[reportUnknownMemberType]
 
 
-def _message(message_id: str = "message-1") -> EmailMessage:
+def _message(message_id: str = "<message-1@example.com>") -> EmailMessage:
     return EmailMessage(
         message_id=message_id,
         history_id="history-1",
@@ -83,7 +84,11 @@ def test_sync_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_sync_persists_multiple_messages_and_counts_batch_duplicates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    messages = [_message("message-1"), _message("message-2"), _message("message-1")]
+    messages = [
+        _message("<shared@example.com>"),
+        _message("<message-2@example.com>"),
+        _message("<shared@example.com>"),
+    ]
     monkeypatch.setattr(email_sync, "pull_messages", lambda _date: messages)
 
     result = email_sync.sync_messages(date(2024, 1, 1))
@@ -92,10 +97,27 @@ def test_sync_persists_multiple_messages_and_counts_batch_duplicates(
     assert result == email_sync.SyncResult(pulled=3, inserted=2, already_stored=1)
 
 
+def test_sync_deduplicates_distinct_messages_with_the_same_rfc_message_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # RFC Message-IDs should be globally unique, but retries, imports, or broken senders can
+    # reuse one for distinct messages. Synchronization treats them as copies and keeps the first.
+    first = _message("<shared@example.com>")
+    second = replace(first, history_id="history-2", subject="Another copy")
+    monkeypatch.setattr(email_sync, "pull_messages", lambda _date: [first, second])
+
+    result = email_sync.sync_messages(date(2024, 1, 1))
+
+    stored = email_sync.Email.get()
+    assert stored.history_id == "history-1"
+    assert email_sync.Email.select().count() == 1
+    assert result == email_sync.SyncResult(pulled=2, inserted=1, already_stored=1)
+
+
 def test_sync_rolls_back_the_entire_batch_when_a_write_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    messages = [_message("message-1"), _message("message-2")]
+    messages = [_message("<message-1@example.com>"), _message("<message-2@example.com>")]
     monkeypatch.setattr(email_sync, "pull_messages", lambda _date: messages)
     original_create = email_sync.Email.create
     calls = 0

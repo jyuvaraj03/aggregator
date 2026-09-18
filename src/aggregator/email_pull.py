@@ -138,10 +138,14 @@ def _fetch_message(message_id: str, session: AuthorizedSession) -> dict[str, obj
 
 
 def _normalize_message(message: dict[str, object]) -> EmailMessage:
-    message_id = message.get("id")
+    gmail_message_id = message.get("id")
     payload = _as_object(message.get("payload"))
     internal_date = message.get("internalDate")
-    if not isinstance(message_id, str) or payload is None or not isinstance(internal_date, str):
+    if (
+        not isinstance(gmail_message_id, str)
+        or payload is None
+        or not isinstance(internal_date, str)
+    ):
         raise MalformedMessageError("message is missing id, payload, or internalDate")
     try:
         received_at = datetime.fromtimestamp(int(internal_date) / 1000, tz=UTC)
@@ -149,6 +153,9 @@ def _normalize_message(message: dict[str, object]) -> EmailMessage:
         raise MalformedMessageError("message internalDate is invalid") from error
 
     headers = _headers(payload)
+    message_id = headers.get("message-id", "").strip()
+    if not message_id:
+        raise MalformedMessageError("message is missing a non-empty Message-ID header")
     body_text, body_html = _message_bodies(payload)
     history_id = message.get("historyId")
     return EmailMessage(
