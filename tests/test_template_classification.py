@@ -4,12 +4,11 @@ from __future__ import annotations
 # pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownMemberType=false
 from collections.abc import Generator
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 from playhouse.migrations import Runner
-from typesafe_sdk import Noul
+from typesafe_sdk import Noul, NoulAnswer, SystemOneResponse, Usage
 
 from aggregator import template_classification
 from aggregator.database import PROJECT_ROOT, close_database, database, database_connection
@@ -40,6 +39,33 @@ def stub_pii_sanitizer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(template_classification, "sanitize_template_text", identity)
 
 
+@pytest.fixture(autouse=True)
+def stub_langfuse(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    langfuse = MagicMock()
+    generation = MagicMock()
+    langfuse.start_as_current_observation.return_value.__enter__.return_value = generation
+    monkeypatch.setattr(
+        template_classification,
+        "_langfuse_tracing",
+        MagicMock(return_value=langfuse),
+    )
+    return langfuse
+
+
+def _typesafe_response(
+    probability: float,
+    *,
+    model: str = "jev-1",
+    input_tokens: int | None = 12,
+    output_tokens: int | None = 3,
+) -> SystemOneResponse:
+    return SystemOneResponse(
+        model=model,
+        usage=Usage(input_tokens=input_tokens, output_tokens=output_tokens),
+        answers={"is_transaction_alert": NoulAnswer(noul=probability)},
+    )
+
+
 @pytest.mark.parametrize(
     ("probability", "prediction"),
     [
@@ -59,9 +85,7 @@ def test_typesafe_predictor_maps_probability_to_classification(
 ) -> None:
     client = MagicMock()
     client.__enter__.return_value = client
-    client.system_one.return_value = SimpleNamespace(
-        nouls={"is_transaction_alert": SimpleNamespace(noul=probability)}
-    )
+    client.system_one.return_value = _typesafe_response(probability)
     client_class = MagicMock(return_value=client)
     monkeypatch.setattr(template_classification, "TypeSafeClient", client_class)
     predictor = template_classification.TemplateClassificationPredictor(api_key="test-key")
@@ -100,9 +124,7 @@ def test_typesafe_predictor_sends_only_sanitized_text(
     monkeypatch.setattr(template_classification, "sanitize_template_text", sanitizer)
     client = MagicMock()
     client.__enter__.return_value = client
-    client.system_one.return_value = SimpleNamespace(
-        nouls={"is_transaction_alert": SimpleNamespace(noul=0.8)}
-    )
+    client.system_one.return_value = _typesafe_response(0.8)
     client_class = MagicMock(return_value=client)
     monkeypatch.setattr(template_classification, "TypeSafeClient", client_class)
 
@@ -118,7 +140,10 @@ def test_typesafe_predictor_sends_only_sanitized_text(
     assert "paid <NUMBER>" in request_state["email_template"]
 
 
-def test_sanitizer_failure_prevents_client_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sanitizer_failure_prevents_client_creation_and_tracing(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_langfuse: MagicMock,
+) -> None:
     sanitizer = MagicMock(side_effect=PiiSanitizationError("sanitizer unavailable"))
     client_class = MagicMock()
     monkeypatch.setattr(template_classification, "sanitize_template_text", sanitizer)
@@ -129,19 +154,77 @@ def test_sanitizer_failure_prevents_client_creation(monkeypatch: pytest.MonkeyPa
         predictor.predict("Amit Patel paid <NUMBER>")
 
     client_class.assert_not_called()
+    stub_langfuse.start_as_current_observation.assert_not_called()
+    stub_langfuse.flush.assert_not_called()
 
 
-def test_typesafe_predictor_propagates_service_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_typesafe_predictor_records_langfuse_generation(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_langfuse: MagicMock,
+) -> None:
+    sanitized_text = "<PERSON> paid <NUMBER>"
+    monkeypatch.setattr(
+        template_classification,
+        "sanitize_template_text",
+        MagicMock(return_value=sanitized_text),
+    )
+    response = _typesafe_response(
+        0.82,
+        model="jev-2026-09-18",
+        input_tokens=41,
+        output_tokens=7,
+    )
     client = MagicMock()
     client.__enter__.return_value = client
-    client.system_one.side_effect = ConnectionError("TypeSafe unavailable")
+    client.system_one.return_value = response
     monkeypatch.setattr(template_classification, "TypeSafeClient", MagicMock(return_value=client))
     predictor = template_classification.TemplateClassificationPredictor(api_key="test-key")
 
-    with pytest.raises(ConnectionError, match="TypeSafe unavailable"):
+    assert predictor.predict("Amit Patel paid <NUMBER>") is True
+
+    stub_langfuse.start_as_current_observation.assert_called_once_with(
+        name="classify-template",
+        as_type="generation",
+        input={
+            "state": {"email_template": sanitized_text},
+            "questions": {
+                "is_transaction_alert": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is the given email template a bank/wallet/card transaction alert?"
+                    ),
+                }
+            },
+        },
+    )
+    generation = stub_langfuse.start_as_current_observation.return_value.__enter__.return_value
+    generation.update.assert_called_once_with(
+        output=response.model_dump(mode="json"),
+        model="jev-2026-09-18",
+        usage_details={"input": 41, "output": 7},
+    )
+    stub_langfuse.flush.assert_called_once_with()
+
+
+def test_typesafe_predictor_propagates_service_failure_and_flushes_langfuse(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_langfuse: MagicMock,
+) -> None:
+    client = MagicMock()
+    client.__enter__.return_value = client
+    service_error = ConnectionError("TypeSafe unavailable")
+    client.system_one.side_effect = service_error
+    monkeypatch.setattr(template_classification, "TypeSafeClient", MagicMock(return_value=client))
+    predictor = template_classification.TemplateClassificationPredictor(api_key="test-key")
+
+    with pytest.raises(ConnectionError, match="TypeSafe unavailable") as error:
         predictor.predict("Paid <NUMBER>")
 
+    assert error.value is service_error
     client.__exit__.assert_called_once()
+    observation = stub_langfuse.start_as_current_observation.return_value
+    assert observation.__exit__.call_args.args[:2] == (ConnectionError, service_error)
+    stub_langfuse.flush.assert_called_once_with()
 
 
 def test_typesafe_predictor_rejects_response_without_answer(
@@ -149,7 +232,11 @@ def test_typesafe_predictor_rejects_response_without_answer(
 ) -> None:
     client = MagicMock()
     client.__enter__.return_value = client
-    client.system_one.return_value = SimpleNamespace(nouls={})
+    client.system_one.return_value = SystemOneResponse(
+        model="jev-1",
+        usage=Usage(input_tokens=8, output_tokens=1),
+        answers={},
+    )
     monkeypatch.setattr(template_classification, "TypeSafeClient", MagicMock(return_value=client))
     predictor = template_classification.TemplateClassificationPredictor(api_key="test-key")
 

@@ -146,7 +146,8 @@ Repeated requests are not guaranteed to produce identical guesses.
 
 ### Langfuse tracing
 
-Every parser-generation LangChain call uses Langfuse's native callback. Set
+Every parser-generation LangChain call and TypeSafe template-classification request
+is traced in Langfuse. Set
 `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` to send traces to your
 project. `LANGFUSE_BASE_URL` defaults to the local [endpoint](https://langfuse.com/self-hosting/deployment/docker-compose) at `http://localhost:3000`, as
 shown in `.env.example`, but can point to another Langfuse region or a self-hosted
@@ -154,7 +155,9 @@ deployment. Set `LANGFUSE_TRACING_ENVIRONMENT` to keep local, staging, and produ
 traces separate.
 
 The LangGraph run is named `generate-field-parsers`; its model generations include
-the prompt, completion, model, and token usage.
+the prompt, completion, model, and token usage. TypeSafe generations are named
+`classify-template` and include only the locally sanitized template state, fixed
+classification question, complete response, resolved model, and reported token usage.
 
 ## Gmail credentials
 

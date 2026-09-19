@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from dotenv import load_dotenv
 from typesafe_sdk import Noul, RetryPolicy, TypeSafeClient
@@ -20,6 +21,15 @@ _TRANSACTION_ALERT_QUESTION = Noul(
 )
 _TRANSACTION_ALERT_THRESHOLD = 0.7
 _NON_TRANSACTION_ALERT_THRESHOLD = 0.3
+_LANGFUSE_GENERATION_NAME = "classify-template"
+
+
+def _langfuse_tracing() -> Any:
+    """Create the Langfuse client after loading environment variables."""
+    from langfuse import get_client
+
+    load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
+    return get_client()
 
 
 class TemplateClassificationPredictor:
@@ -37,16 +47,41 @@ class TemplateClassificationPredictor:
     def predict(self, template_text: str) -> bool | None:
         """Predict whether a mined template is a transaction alert."""
         sanitized_template_text = sanitize_template_text(template_text)
-        with TypeSafeClient(
-            api_key=self._api_key,
-            retry=RetryPolicy(max_retries=0),
-        ) as client:
-            response = client.system_one(
-                state={"email_template": sanitized_template_text},
-                questions={"is_transaction_alert": _TRANSACTION_ALERT_QUESTION},
-            )
+        state = {"email_template": sanitized_template_text}
+        questions = {"is_transaction_alert": _TRANSACTION_ALERT_QUESTION}
+        langfuse = _langfuse_tracing()
+        try:
+            with langfuse.start_as_current_observation(
+                name=_LANGFUSE_GENERATION_NAME,
+                as_type="generation",
+                input={
+                    "state": state,
+                    "questions": {
+                        name: question.model_dump(mode="json")
+                        for name, question in questions.items()
+                    },
+                },
+            ) as generation:
+                with TypeSafeClient(
+                    api_key=self._api_key,
+                    retry=RetryPolicy(max_retries=0),
+                ) as client:
+                    response = client.system_one(state=state, questions=questions)
 
-        probability = response.nouls["is_transaction_alert"].noul
+                usage_details: dict[str, int] = {}
+                if response.usage.input_tokens is not None:
+                    usage_details["input"] = response.usage.input_tokens
+                if response.usage.output_tokens is not None:
+                    usage_details["output"] = response.usage.output_tokens
+                generation.update(
+                    output=response.model_dump(mode="json"),
+                    model=response.model,
+                    usage_details=usage_details,
+                )
+                probability = response.nouls["is_transaction_alert"].noul
+        finally:
+            langfuse.flush()
+
         if probability >= _TRANSACTION_ALERT_THRESHOLD:
             return True
         if probability <= _NON_TRANSACTION_ALERT_THRESHOLD:
