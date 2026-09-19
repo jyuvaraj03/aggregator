@@ -1,0 +1,19 @@
+meta {
+  name: Approve Field Parsers
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/templates/1/field-parsers/approve
+  body: none
+  auth: none
+}
+
+docs {
+  Approval requires a transaction-alert template, an example email, and all
+  seven parser fields to be configured. The representative preview must also
+  resolve to valid transaction types.
+
+  Saving or regenerating field parsers revokes approval.
+}

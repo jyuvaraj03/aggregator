@@ -4,6 +4,7 @@ import { EmailRows } from "../../components/EmailRows";
 import { ErrorState, Pagination, readPage, ReceivedTime } from "../../components/shared";
 import { ApiError } from "../../lib/api/client";
 import { emailPageOptions } from "../emails/queries";
+import { FieldParserReview } from "./FieldParserReview";
 import { templateDetailOptions } from "./queries";
 import {
     readTemplateView,
@@ -55,50 +56,64 @@ export function TemplateDetailScreen() {
                 />
             ) : (
                 <>
-                    <header className="page-heading">
-                        <h1>Template {template.data.id}</h1>
-                        <p>
-                            {template.data.email_count.toLocaleString()} matching{" "}
-                            {template.data.email_count === 1 ? "email" : "emails"}
-                        </p>
-                    </header>
-                    <section className="template-section" aria-labelledby="pattern-heading">
-                        <h2 id="pattern-heading">Template pattern</h2>
-                        <pre className="template-pattern">{template.data.text}</pre>
-                    </section>
-                    <section className="template-section" aria-labelledby="example-heading">
-                        <h2 id="example-heading">Example email</h2>
-                        {template.data.example ? (
-                            <article className="email-detail template-example">
-                                <h3>
-                                    <Link to={emailHref(template.data.example.id)}>
-                                        {template.data.example.subject || "(No subject)"}
-                                    </Link>
-                                </h3>
-                                <dl>
-                                    <div>
-                                        <dt>From</dt>
-                                        <dd>{template.data.example.sender || "Unknown sender"}</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Received</dt>
-                                        <dd>
-                                            <ReceivedTime
-                                                value={template.data.example.received_at}
-                                            />
-                                        </dd>
-                                    </div>
-                                </dl>
-                                <div className="email-body">
-                                    {template.data.example.body || "This email has no body."}
-                                </div>
-                            </article>
-                        ) : (
-                            <p className="example-empty">
-                                No example email is available for this template.
-                            </p>
-                        )}
-                    </section>
+                    {template.data.is_transaction_alert === true ? (
+                        <FieldParserReview
+                            key={template.data.id}
+                            template={template.data}
+                            emailHref={emailHref}
+                        />
+                    ) : (
+                        <>
+                            <header className="page-heading">
+                                <h1>Template {template.data.id}</h1>
+                                <p>
+                                    {template.data.email_count.toLocaleString()} matching{" "}
+                                    {template.data.email_count === 1 ? "email" : "emails"}
+                                </p>
+                            </header>
+                            <section className="template-section" aria-labelledby="pattern-heading">
+                                <h2 id="pattern-heading">Template pattern</h2>
+                                <pre className="template-pattern">{template.data.text}</pre>
+                            </section>
+                            <section className="template-section" aria-labelledby="example-heading">
+                                <h2 id="example-heading">Example email</h2>
+                                {template.data.example ? (
+                                    <article className="email-detail template-example">
+                                        <h3>
+                                            <Link to={emailHref(template.data.example.id)}>
+                                                {template.data.example.subject || "(No subject)"}
+                                            </Link>
+                                        </h3>
+                                        <dl>
+                                            <div>
+                                                <dt>From</dt>
+                                                <dd>
+                                                    {template.data.example.sender ||
+                                                        "Unknown sender"}
+                                                </dd>
+                                            </div>
+                                            <div>
+                                                <dt>Received</dt>
+                                                <dd>
+                                                    <ReceivedTime
+                                                        value={template.data.example.received_at}
+                                                    />
+                                                </dd>
+                                            </div>
+                                        </dl>
+                                        <div className="email-body">
+                                            {template.data.example.body ||
+                                                "This email has no body."}
+                                        </div>
+                                    </article>
+                                ) : (
+                                    <p className="example-empty">
+                                        No example email is available for this template.
+                                    </p>
+                                )}
+                            </section>
+                        </>
+                    )}
                     <section
                         className="email-list"
                         aria-labelledby="matching-heading"

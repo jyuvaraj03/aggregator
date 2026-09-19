@@ -17,6 +17,7 @@ from aggregator.database import PROJECT_ROOT, close_database, database, database
 from aggregator.field_parsers import (
     FieldParserGenerationError,
     TemplateNotTransactionAlertError,
+    approve_field_parsers,
     field_parser_snapshot,
     generate_and_replace_field_parsers,
     replace_field_parsers,
@@ -75,7 +76,11 @@ def _assign_account(template: Template) -> None:
     account = Account.get_or_none(Account.name == "Checking")
     if account is None:
         account = Account.create(name="Checking")
-    Template.update(account=account).where(Template.id == template.id).execute()
+    Template.update(
+        account=account,
+        is_transaction_alert=True,
+        field_parsers_approved=True,
+    ).where(Template.id == template.id).execute()
 
 
 def test_serializers_use_only_detached_prepared_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -152,6 +157,7 @@ def test_assignment_preview_and_extraction_share_stored_body(body: str, expected
         persisted_template = Template.get_by_id(template.id)
         _assign_account(persisted_template)
     snapshot = replace_field_parsers(template.id, _parsers())
+    approve_field_parsers(template.id)
     assert snapshot.preview is not None
     assert snapshot.preview["amount"] == expected
     result = run_transaction_extraction()
@@ -217,6 +223,7 @@ def test_generation_uses_earliest_email_after_releasing_connection(
         template = Template.create(
             text="Paid <CURRENCY_CODE><NUMBER>",
             is_transaction_alert=True,
+            field_parsers_approved=True,
             transaction_extraction_status="failed",
             transaction_extraction_error="old failure",
         )
@@ -262,6 +269,9 @@ def test_generation_uses_earliest_email_after_releasing_connection(
     assert snapshot.preview["payee"] is None
     assert snapshot.transaction_extraction_status == "pending"
     assert snapshot.transaction_extraction_error is None
+    assert snapshot.field_parser_status == "needs_review"
+    with database_connection():
+        assert Template.get_by_id(template.id).field_parsers_approved is False
     assert database.is_closed()
 
 
@@ -359,6 +369,7 @@ def test_extraction_records_invalid_complete_configuration_as_failure() -> None:
         _assign_account(template)
         email = _email(1, template)
     replace_field_parsers(template.id, _parsers())
+    approve_field_parsers(template.id)
     with database_connection():
         FieldParser.update(parameter_indices=[2]).where(
             (FieldParser.template == template.id) & (FieldParser.field_name == "amount")
@@ -421,6 +432,7 @@ def test_extraction_loads_parser_configuration_once_per_template(
         for index in range(4):
             _email(index, template)
     replace_field_parsers(template.id, _parsers())
+    approve_field_parsers(template.id)
     original = transaction_extraction.parser_sets
     calls = 0
 

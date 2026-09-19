@@ -161,6 +161,7 @@ def generate_field_parsers_task(self: object, template_id: int) -> dict[str, obj
             "text": snapshot.text,
             "transaction_extraction_status": snapshot.transaction_extraction_status,
             "transaction_extraction_error": snapshot.transaction_extraction_error,
+            "field_parser_status": snapshot.field_parser_status,
             "example_email_id": snapshot.example_email_id,
             "parameters": [
                 {"index": index, "mask_name": mask, "value": value}

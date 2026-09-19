@@ -8,14 +8,17 @@ from . import parser_generation, queries
 from .database import database, database_connection
 from .models import FieldParser, Template, TransactionExtractionStatus
 from .parser_configuration import (
+    TRANSACTION_FIELD_NAMES,
     ConstantFieldParser,
     ExtractedFieldParser,
     FieldParserSet,
+    field_parser_status,
     validate_parser_set,
 )
 from .read_models import ParserSnapshot
 from .template_representation import represent_email_template
 from .template_syntax import template_parameter_count, template_parameter_masks
+from .transaction_extraction import extract_transaction
 
 
 class FieldParserGenerationError(Exception):
@@ -24,6 +27,18 @@ class FieldParserGenerationError(Exception):
 
 class TemplateNotTransactionAlertError(FieldParserGenerationError):
     """The template is not eligible for automatic parser generation."""
+
+
+class IncompleteFieldParsersError(Exception):
+    """A parser set cannot be approved until every transaction field is configured."""
+
+
+class MissingParserExampleError(Exception):
+    """A parser set cannot be approved without a representative email."""
+
+
+class InvalidParserPreviewError(Exception):
+    """The representative email does not resolve to valid transaction values."""
 
 
 def require_parser_generation_eligible(template_id: int) -> None:
@@ -54,6 +69,11 @@ def _snapshot(template: Template, parsers: FieldParserSet) -> ParserSnapshot:
             Literal["pending", "succeeded", "failed"], template.transaction_extraction_status
         ),
         transaction_extraction_error=template.transaction_extraction_error,
+        field_parser_status=field_parser_status(
+            is_transaction_alert=template.is_transaction_alert,
+            approved=bool(template.field_parsers_approved),
+            configured_count=len(parsers.configured()),
+        ),
         example_email_id=example.id if example is not None else None,
         parameters=tuple(zip(masks, values, strict=True)),
         parsers=parsers,
@@ -126,7 +146,50 @@ def replace_field_parsers(template_id: int, parser_set: FieldParserSet) -> Parse
                 )
             template.transaction_extraction_status = TransactionExtractionStatus.PENDING.value
             template.transaction_extraction_error = None
+            template.field_parsers_approved = False
             template.save(
-                only=[Template.transaction_extraction_status, Template.transaction_extraction_error]
+                only=[
+                    Template.transaction_extraction_status,
+                    Template.transaction_extraction_error,
+                    Template.field_parsers_approved,
+                ]
             )
             return _snapshot(template, parser_set.model_copy(deep=True))
+
+
+def approve_field_parsers(template_id: int) -> ParserSnapshot:
+    """Validate the stored draft against its example and approve it atomically."""
+    with database_connection():
+        with database.atomic():
+            template = queries.require_template(template_id)
+            if template.is_transaction_alert is not True:
+                raise TemplateNotTransactionAlertError(
+                    "Template is not classified as a transaction alert"
+                )
+            parsers = queries.parser_sets({template_id: template})[template_id]
+            if set(parsers.configured()) != set(TRANSACTION_FIELD_NAMES):
+                raise IncompleteFieldParsersError(
+                    "Configure all transaction fields before approving this parser"
+                )
+            example = queries.example_email(template.id)
+            if example is None:
+                raise MissingParserExampleError(
+                    "An example email is required before approving this parser"
+                )
+            representation = represent_email_template(template.text, example.body, parsers)
+            try:
+                extract_transaction(representation)
+            except ValueError as error:
+                raise InvalidParserPreviewError(str(error)) from error
+
+            template.field_parsers_approved = True
+            template.transaction_extraction_status = TransactionExtractionStatus.PENDING.value
+            template.transaction_extraction_error = None
+            template.save(
+                only=[
+                    Template.field_parsers_approved,
+                    Template.transaction_extraction_status,
+                    Template.transaction_extraction_error,
+                ]
+            )
+            return _snapshot(template, parsers.model_copy(deep=True))

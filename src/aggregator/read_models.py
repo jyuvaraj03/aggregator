@@ -5,7 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from .parser_configuration import FieldParserSet
+from .parser_configuration import FieldParserSet, FieldParserStatus
 from .template_representation import TemplateRepresentation
 
 
@@ -40,6 +40,7 @@ class TemplateRecord:
     is_transaction_alert: bool | None
     email_count: int
     account_id: int | None
+    field_parser_status: FieldParserStatus | None
     example: EmailRecord | None = None
 
 
@@ -64,6 +65,7 @@ class ParserSnapshot:
     text: str
     transaction_extraction_status: Literal["pending", "succeeded", "failed"]
     transaction_extraction_error: str | None
+    field_parser_status: FieldParserStatus | None
     example_email_id: int | None
     parameters: tuple[tuple[str, str | None], ...]
     parsers: FieldParserSet

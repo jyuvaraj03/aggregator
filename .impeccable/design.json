@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-07T08:04:34Z",
+  "generatedAt": "2026-09-19T00:00:00Z",
   "title": "Design System: Aggregator",
   "extensions": {
     "motion": [
@@ -11,7 +11,8 @@
       }
     ],
     "breakpoints": [
-      { "name": "mobile", "value": "640px" }
+      { "name": "mobile", "value": "640px" },
+      { "name": "workbench-stack", "value": "860px" }
     ]
   },
   "components": [
@@ -60,6 +61,13 @@
       "description": "Whole-row link with a two-line pattern preview, count, and chevron.",
       "html": "<a class=\"ds-row\" href=\"/templates/1\"><span class=\"ds-copy\"><span class=\"ds-name\">Template 1</span><span class=\"ds-preview\">Your transaction details</span></span><span class=\"ds-total\">3 emails</span><svg class=\"ds-chevron\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 5 7 7-7 7\" /></svg></a>",
       "css": ".ds-row { display: flex; align-items: center; gap: 24px; padding: 22px 8px; border-bottom: 1px solid var(--line, #d9dfd8); text-decoration: none; color: #202b27; font-family: 'Public Sans Variable', sans-serif; font-size: 16px; } .ds-row:hover { background: #edf1e9; } .ds-row:focus-visible { outline: 3px solid #367b64; outline-offset: 4px; } .ds-copy { flex: 1; min-width: 0; } .ds-name { display: block; font-weight: 600; margin-bottom: 8px; } .ds-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; color: var(--muted, #59645e); font-size: 14px; line-height: 1.6; } .ds-total { color: var(--muted, #59645e); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; } .ds-chevron { width: 16px; height: 16px; fill: none; stroke: var(--muted, #59645e); stroke-width: 1.5; flex-shrink: 0; } @media (max-width: 640px) { .ds-row { flex-wrap: wrap; gap: 10px; padding: 20px 0; } .ds-copy { flex-basis: 100%; } .ds-total { flex: 1; } }"
+    },
+    {
+      "name": "Review status badge",
+      "kind": "chip",
+      "description": "Compact template and parser state label using success, review, or neutral colors.",
+      "html": "<span class=\"ds-parser-status\">Parser needs review</span>",
+      "css": ".ds-parser-status { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px; border: 1px solid #dfc26b; border-radius: 5px; background: #fff1c2; color: #634600; font-family: 'Public Sans Variable', sans-serif; font-size: 12px; font-weight: 650; line-height: 1.4; white-space: nowrap; }"
     }
   ]
 }

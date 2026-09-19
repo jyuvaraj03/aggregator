@@ -8,6 +8,7 @@ from typing import cast
 from . import queries
 from .database import database_connection
 from .models import Email, Template
+from .parser_configuration import field_parser_status
 from .read_models import EmailRecord, Page, TemplateRecord, TransactionRecord
 from .template_representation import represent_email_template
 
@@ -87,11 +88,16 @@ def transaction_page(page: int) -> Page[TransactionRecord]:
 
 def _template_record(template: Template) -> TemplateRecord:
     return TemplateRecord(
-        template.id,
-        template.text,
-        template.is_transaction_alert,
-        int(vars(template)["email_count"]),
-        template.account_id,
+        id=template.id,
+        text=template.text,
+        is_transaction_alert=template.is_transaction_alert,
+        email_count=int(vars(template)["email_count"]),
+        account_id=template.account_id,
+        field_parser_status=field_parser_status(
+            is_transaction_alert=template.is_transaction_alert,
+            approved=bool(template.field_parsers_approved),
+            configured_count=int(vars(template)["field_parser_count"]),
+        ),
     )
 
 

@@ -46,10 +46,10 @@ reports pulled, inserted, and already-stored counts, and lets the user browse
 stored emails and inspect their bodies as plain text. Pagination survives detail
 navigation, and received times use the browser's locale and timezone.
 
-The Templates tab extracts patterns from all stored emails without a template and
-reports processed, skipped, and newly created template counts. The user can browse
-templates, inspect each pattern and example email, and open matching emails while
-retaining list pagination. Template inspection is read-only.
+The Templates tab lets the user browse classified patterns, inspect examples, and
+open matching emails while retaining list pagination. Transaction-alert details
+also support generating, correcting, saving, previewing, and approving field
+parsers.
 
 Local operation describes the existing implementation; a permanent local-only
 deployment requirement has not been established.
@@ -68,15 +68,13 @@ deployment requirement has not been established.
   and credit/debit direction.
 - Parser generation can use a local Ollama model or a remote Mistral provider.
   Local application storage does not imply all model processing stays local.
-- Transaction extraction requires an assigned account and complete parser
-  configuration. Extraction reports skipped records and failures.
-- The current generation API saves generated parsers; it does not establish a
-  separate human-approval state before extraction.
+- Transaction extraction requires an assigned account and an approved, complete
+  parser configuration. Extraction reports skipped records and failures.
+- Saved parser drafts remain ineligible for extraction until approval. Approval
+  validates the representative preview, and saving or regenerating rules revokes it.
 
 ### Intended behavior and open decisions
 
-- Human review belongs between automatic parser generation and parsing. The
-  review interface and how approval gates parsing remain to be defined.
 - The browser should eventually support the complete workflow above; current
   email-only screens do not define the long-term product boundary.
 - Transaction export is an intended capability. Export formats, destinations,

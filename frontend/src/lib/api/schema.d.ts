@@ -139,6 +139,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/templates/{template_id}/field-parsers/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Approve Field Parsers */
+        post: operations["post_approve_field_parsers_templates__template_id__field_parsers_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/templates/{template_id}/field-parsers/generate": {
         parameters: {
             query?: never;
@@ -440,6 +457,11 @@ export interface components {
                   )
                 | null;
         };
+        /**
+         * FieldParserStatus
+         * @enum {string}
+         */
+        FieldParserStatus: "needs_generation" | "needs_review" | "approved";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -501,6 +523,7 @@ export interface components {
             email_count: number;
             /** Account Id */
             account_id: number | null;
+            field_parser_status: components["schemas"]["FieldParserStatus"] | null;
             example: components["schemas"]["TemplateEmailExample"] | null;
         };
         /** TemplateEmailExample */
@@ -536,6 +559,7 @@ export interface components {
             transaction_extraction_status: "pending" | "succeeded" | "failed";
             /** Transaction Extraction Error */
             transaction_extraction_error: string | null;
+            field_parser_status: components["schemas"]["FieldParserStatus"] | null;
             /** Example Email Id */
             example_email_id: number | null;
             /** Parameters */
@@ -568,6 +592,7 @@ export interface components {
             email_count: number;
             /** Account Id */
             account_id: number | null;
+            field_parser_status: components["schemas"]["FieldParserStatus"] | null;
         };
         /** TransactionPage */
         TransactionPage: {
@@ -993,6 +1018,37 @@ export interface operations {
                 "application/json": components["schemas"]["FieldParserSet"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateFieldParsersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_approve_field_parsers_templates__template_id__field_parsers_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

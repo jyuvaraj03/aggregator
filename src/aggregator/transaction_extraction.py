@@ -158,7 +158,9 @@ def _group_pending_emails(pending_emails: list[Email]) -> tuple[dict[int, list[E
 
 def _is_template_eligible(template: Template) -> bool:
     return (
-        template.account_id is not None
+        template.is_transaction_alert is True
+        and template.field_parsers_approved
+        and template.account_id is not None
         and template.transaction_extraction_status != TransactionExtractionStatus.FAILED.value
     )
 

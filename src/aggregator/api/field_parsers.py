@@ -7,7 +7,11 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from ..background_tasks import generate_field_parsers_task
 from ..field_parsers import (
+    IncompleteFieldParsersError,
+    InvalidParserPreviewError,
+    MissingParserExampleError,
     TemplateNotTransactionAlertError,
+    approve_field_parsers,
     field_parser_snapshot,
     replace_field_parsers,
     require_parser_generation_eligible,
@@ -35,6 +39,24 @@ def put_field_parsers(
     try:
         snapshot = replace_field_parsers(template_id, parser_set)
     except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return parser_snapshot_response(snapshot)
+
+
+@router.post(
+    "/{template_id}/field-parsers/approve",
+    response_model=TemplateFieldParsersResponse,
+)
+def post_approve_field_parsers(template_id: int) -> TemplateFieldParsersResponse:
+    try:
+        snapshot = approve_field_parsers(template_id)
+    except (
+        IncompleteFieldParsersError,
+        MissingParserExampleError,
+        TemplateNotTransactionAlertError,
+    ) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except InvalidParserPreviewError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return parser_snapshot_response(snapshot)
 

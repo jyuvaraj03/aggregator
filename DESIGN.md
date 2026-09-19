@@ -101,6 +101,11 @@ The body has a 320px minimum width. Template details stack the pattern, example
 email, and matching-email list vertically. Patterns and email bodies preserve
 line breaks and wrap long text. Template list previews stop after two lines.
 
+Parser review uses a task-focused two-column workbench: source context and field
+rules occupy the flexible main column, while the resolved transaction and commit
+actions remain sticky in a 280–340px side column. At 860px and below, the preview
+stacks after the rules and loses sticky positioning.
+
 ## Elevation & Depth
 
 The current interface has no box shadows. White surfaces, one-pixel borders,
@@ -125,6 +130,10 @@ pattern panels use `clamp(20px, 4vw, 32px)`.
   ellipsis; template previews wrap. Counts and a chevron sit beside the copy.
 - **Panels:** Sync and extraction controls use bordered white panels. Email
   details and examples separate metadata from plain-text bodies with a rule.
+- **Parser review:** Source parameters use compact green numbered labels. Parser
+  fields are divided by rules rather than nested cards, and the resolved preview
+  uses the standard panel treatment. Review-state badges reuse the established
+  green success, yellow review, and neutral treatments.
 - **States:** Loading and success messages use status announcements; errors use
   alerts and retry controls. Empty lists use a bordered, centered text region.
   Extraction disables its action while pending and reports completion counts.

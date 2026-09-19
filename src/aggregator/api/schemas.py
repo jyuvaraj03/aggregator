@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, StrictInt
 
-from ..parser_configuration import FieldParserSet
+from ..parser_configuration import FieldParserSet, FieldParserStatus
 
 
 class ResolvedTransactionFields(BaseModel):
@@ -32,6 +32,7 @@ class TemplateFieldParsersResponse(BaseModel):
     text: str
     transaction_extraction_status: Literal["pending", "succeeded", "failed"]
     transaction_extraction_error: str | None
+    field_parser_status: FieldParserStatus | None
     example_email_id: int | None
     parameters: list[IndexedParameterResponse]
     parsers: FieldParserSet
@@ -86,6 +87,7 @@ class TemplateResponse(BaseModel):
     is_transaction_alert: bool | None
     email_count: int
     account_id: int | None
+    field_parser_status: FieldParserStatus | None
 
 
 class TemplateAccountUpdate(BaseModel):

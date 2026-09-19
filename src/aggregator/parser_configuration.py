@@ -25,6 +25,25 @@ class TransactionFieldName(StrEnum):
 TRANSACTION_FIELD_NAMES = tuple(field.value for field in TransactionFieldName)
 
 
+class FieldParserStatus(StrEnum):
+    NEEDS_GENERATION = "needs_generation"
+    NEEDS_REVIEW = "needs_review"
+    APPROVED = "approved"
+
+
+def field_parser_status(
+    *, is_transaction_alert: bool | None, approved: bool, configured_count: int
+) -> FieldParserStatus | None:
+    """Describe the review state exposed by template and parser reads."""
+    if is_transaction_alert is not True:
+        return None
+    if approved and configured_count == len(TRANSACTION_FIELD_NAMES):
+        return FieldParserStatus.APPROVED
+    if configured_count == 0:
+        return FieldParserStatus.NEEDS_GENERATION
+    return FieldParserStatus.NEEDS_REVIEW
+
+
 def validate_parameter_indices(indices: list[int]) -> None:
     if any(type(index) is not int for index in indices):
         raise ValueError("Expected integer parameter indices")

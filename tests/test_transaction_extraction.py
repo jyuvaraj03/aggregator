@@ -11,7 +11,7 @@ import pytest
 from playhouse.migrations import Runner
 
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
-from aggregator.field_parsers import replace_field_parsers
+from aggregator.field_parsers import approve_field_parsers, replace_field_parsers
 from aggregator.models import (
     Account,
     Email,
@@ -68,6 +68,8 @@ def _configure(template: Template, **constants: str) -> None:
     if account is None:
         account = Account.create(name="Checking")
     template.account = account
+    template.is_transaction_alert = True
+    template.field_parsers_approved = True
     template.save()
     for field_name in TransactionFieldName:
         constant = constants.get(field_name.value)
@@ -250,6 +252,7 @@ def test_replacing_parsers_clears_a_template_failure_for_retry() -> None:
     template = Template.create(
         text="receipt",
         account=account,
+        is_transaction_alert=True,
         transaction_extraction_status=TransactionExtractionStatus.FAILED.value,
         transaction_extraction_error="old failure",
     )
@@ -271,6 +274,8 @@ def test_replacing_parsers_clears_a_template_failure_for_retry() -> None:
     refreshed = Template.get_by_id(template.id)
     assert refreshed.transaction_extraction_status == TransactionExtractionStatus.PENDING.value
     assert refreshed.transaction_extraction_error is None
+    assert refreshed.field_parsers_approved is False
+    approve_field_parsers(template.id)
     assert run_transaction_extraction().created == 1
 
 
@@ -284,6 +289,28 @@ def test_new_email_for_succeeded_template_remains_eligible() -> None:
 
     assert run_transaction_extraction() == TransactionExtractionResult(1, 1, 0, 0, 0)
     assert Transaction.select().count() == 2
+
+
+def test_extraction_skips_complete_but_unapproved_parser() -> None:
+    account = Account.create(name="Checking")
+    template = Template.create(text="receipt", account=account, is_transaction_alert=True)
+    _email(1, template)
+    missing = MissingFieldParser(rule="missing")
+    replace_field_parsers(
+        template.id,
+        FieldParserSet(
+            amount=ConstantFieldParser(rule="constant", constant_value="10"),
+            currency_code=missing,
+            payee=missing,
+            description=missing,
+            transaction_date=missing,
+            account_hint=missing,
+            is_credit=missing,
+        ),
+    )
+
+    assert run_transaction_extraction() == TransactionExtractionResult(1, 0, 1, 0, 0)
+    assert Transaction.select().count() == 0
 
 
 def test_extraction_skips_unassigned_template_before_parser_or_representation(

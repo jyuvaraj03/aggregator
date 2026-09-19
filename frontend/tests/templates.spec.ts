@@ -9,6 +9,7 @@ const template: components["schemas"]["TemplateResponse"] = {
     is_transaction_alert: null,
     email_count: 51,
     account_id: null,
+    field_parser_status: null,
 };
 const email: components["schemas"]["EmailDetail"] = {
     id: 12,
@@ -19,6 +20,39 @@ const email: components["schemas"]["EmailDetail"] = {
     template_id: 7,
     representation: null,
     body: "Dear customer,\nYour account 1234 was debited by INR 420.00 at Corner Store.\nAvailable balance: INR 8,500.00.",
+};
+const completeParsers: components["schemas"]["FieldParserSet"] = {
+    amount: { rule: "extracted", parameter_indices: [1] },
+    currency_code: { rule: "constant", constant_value: "INR" },
+    payee: { rule: "extracted", parameter_indices: [2] },
+    description: { rule: "missing" },
+    transaction_date: { rule: "constant", constant_value: "2026-09-01" },
+    account_hint: { rule: "extracted", parameter_indices: [0] },
+    is_credit: { rule: "constant", constant_value: "false" },
+};
+const parserSnapshot: components["schemas"]["TemplateFieldParsersResponse"] = {
+    template_id: 7,
+    text: pattern,
+    transaction_extraction_status: "pending",
+    transaction_extraction_error: null,
+    field_parser_status: "needs_review",
+    example_email_id: 12,
+    parameters: [
+        { index: 0, mask_name: "*", value: "1234" },
+        { index: 1, mask_name: "*", value: "420.00" },
+        { index: 2, mask_name: "*", value: "Corner Store" },
+        { index: 3, mask_name: "*", value: "8,500.00" },
+    ],
+    parsers: completeParsers,
+    preview: {
+        amount: "420.00",
+        currency_code: "INR",
+        payee: "Corner Store",
+        description: null,
+        transaction_date: "2026-09-01",
+        account_hint: "1234",
+        is_credit: "false",
+    },
 };
 const paginated = <T>(items: T[], page = 1, total = 51) => ({
     items,
@@ -101,7 +135,12 @@ test("classification tabs expose URLs, reset pages, and show every badge state",
         return route.fulfill({
             json: paginated(
                 [
-                    { ...template, id: 9, is_transaction_alert: true },
+                    {
+                        ...template,
+                        id: 9,
+                        is_transaction_alert: true,
+                        field_parser_status: "approved" as const,
+                    },
                     { ...template, id: 8, is_transaction_alert: null },
                     { ...template, id: 7, is_transaction_alert: false },
                 ],
@@ -144,6 +183,7 @@ test("classification tabs expose URLs, reset pages, and show every badge state",
             exact: true,
         }),
     ).toBeVisible();
+    await expect(page.getByText("Parser approved", { exact: true })).toBeVisible();
 
     await page.getByRole("link", { name: "Needs review", exact: true }).click();
     await expect(page).toHaveURL("/templates?page=1&classification=unclassified");
@@ -224,6 +264,130 @@ test("template and matching-email pagination survive detail navigation and reloa
     expect(filters.every((filter) => filter === "7")).toBe(true);
     await page.getByRole("link", { name: "Back to templates", exact: true }).click();
     await expect(page).toHaveURL("/templates?page=2&classification=unclassified");
+});
+
+test("transaction alerts use the parser workbench and require saving before approval", async ({
+    page,
+}, testInfo) => {
+    const alertTemplate = {
+        ...template,
+        is_transaction_alert: true,
+        field_parser_status: "needs_review" as const,
+        example: email,
+    };
+    let savedBody: components["schemas"]["FieldParserSet"] | undefined;
+    let approved = false;
+    await page.route("**/api/templates/7", (route) => route.fulfill({ json: alertTemplate }));
+    await page.route("**/api/templates/7/field-parsers", async (route) => {
+        if (route.request().method() === "PUT") {
+            savedBody = route.request().postDataJSON();
+            return route.fulfill({
+                json: {
+                    ...parserSnapshot,
+                    parsers: savedBody,
+                    preview: { ...parserSnapshot.preview, payee: "Neighborhood Market" },
+                },
+            });
+        }
+        return route.fulfill({ json: parserSnapshot });
+    });
+    await page.route("**/api/templates/7/field-parsers/approve", (route) => {
+        approved = true;
+        return route.fulfill({
+            json: { ...parserSnapshot, parsers: savedBody, field_parser_status: "approved" },
+        });
+    });
+
+    await page.goto("/templates/7?page=2&emailsPage=1&classification=transaction_alert");
+
+    await expect(page).toHaveTitle("Review parser · Aggregator");
+    await expect(page.getByRole("heading", { name: "Resolved transaction" })).toBeVisible();
+    await expect(
+        page.getByRole("complementary").getByText("420.00", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("parser-review.png"), fullPage: true });
+    const payee = page.getByRole("group", { name: "Payee" });
+    await payee.getByLabel("Rule").selectOption("constant");
+    await payee.getByLabel("Fixed value").fill("Neighborhood Market");
+    await expect(page.getByText("Unsaved", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve parser" })).toBeDisabled();
+    page.once("dialog", async (dialog) => {
+        expect(dialog.message()).toBe("Discard your unsaved parser changes?");
+        await dialog.dismiss();
+    });
+    await page.getByRole("link", { name: "Back to templates" }).click();
+    await expect(page).toHaveURL(/\/templates\/7/);
+
+    await page.getByRole("button", { name: "Save draft" }).click();
+
+    await expect
+        .poll(() => savedBody?.payee)
+        .toEqual({
+            rule: "constant",
+            constant_value: "Neighborhood Market",
+        });
+    await expect(page.getByText("Draft saved. Check the preview, then approve it.")).toBeVisible();
+    await page.getByRole("button", { name: "Approve parser" }).click();
+    await expect.poll(() => approved).toBe(true);
+    await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approved" })).toBeDisabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+    );
+});
+
+test("an empty parser can be generated from the review screen", async ({ page }) => {
+    const emptyParsers = Object.fromEntries(
+        Object.keys(completeParsers).map((name) => [name, null]),
+    );
+    await page.route("**/api/templates/7", (route) =>
+        route.fulfill({
+            json: {
+                ...template,
+                is_transaction_alert: true,
+                field_parser_status: "needs_generation",
+                example: email,
+            },
+        }),
+    );
+    await page.route("**/api/templates/7/field-parsers", (route) =>
+        route.fulfill({
+            json: {
+                ...parserSnapshot,
+                field_parser_status: "needs_generation",
+                parsers: emptyParsers,
+                preview: Object.fromEntries(
+                    Object.keys(completeParsers).map((name) => [name, null]),
+                ),
+            },
+        }),
+    );
+    await page.route("**/api/templates/7/field-parsers/generate", (route) =>
+        route.fulfill({
+            status: 202,
+            json: { job_id: "parser-job", status_url: "/jobs/parser-job" },
+        }),
+    );
+    await page.route("**/api/jobs/parser-job", (route) =>
+        route.fulfill({
+            json: {
+                job_id: "parser-job",
+                action: "aggregator.field_parser_generation",
+                status: "succeeded",
+                result: parserSnapshot,
+                error: null,
+            },
+        }),
+    );
+
+    await page.goto("/templates/7");
+    await page.getByRole("button", { name: "Generate parser" }).click();
+
+    await expect(
+        page.getByText("Parser generated. Review the draft before approving it."),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Regenerate parser" })).toBeVisible();
+    await expect(page.getByText("Needs review", { exact: true })).toBeVisible();
 });
 
 test("loading, failed read, retry and out-of-range template pages", async ({ page }) => {

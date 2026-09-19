@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { ErrorState, Pagination, readPage } from "../../components/shared";
+import type { components } from "../../lib/api/schema";
 import {
     DEFAULT_TEMPLATE_VIEW,
     readTemplateView,
@@ -65,6 +66,17 @@ function classificationBadge(classification: boolean | null) {
         return <span className="classification-badge not-alert">Not transaction alert</span>;
     }
     return <span className="classification-badge review">Needs review</span>;
+}
+
+function parserStatusBadge(status: components["schemas"]["FieldParserStatus"] | null) {
+    if (!status) return null;
+    const label =
+        status === "approved"
+            ? "Parser approved"
+            : status === "needs_review"
+              ? "Parser needs review"
+              : "Parser needs generation";
+    return <span className={"parser-status-badge " + status}>{label}</span>;
 }
 
 export function TemplatesScreen() {
@@ -137,6 +149,10 @@ export function TemplatesScreen() {
                                                     {classificationBadge(
                                                         template.is_transaction_alert,
                                                     )}
+                                                    {template.is_transaction_alert === true &&
+                                                        parserStatusBadge(
+                                                            template.field_parser_status,
+                                                        )}
                                                 </span>
                                                 <span className="template-preview">
                                                     {template.text}

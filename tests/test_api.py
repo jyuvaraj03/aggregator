@@ -260,6 +260,7 @@ def test_template_counts_and_missing_resource(client: TestClient) -> None:
             "is_transaction_alert": None,
             "email_count": 0,
             "account_id": None,
+            "field_parser_status": None,
         },
         {
             "id": first.id,
@@ -267,6 +268,7 @@ def test_template_counts_and_missing_resource(client: TestClient) -> None:
             "is_transaction_alert": None,
             "email_count": 2,
             "account_id": None,
+            "field_parser_status": None,
         },
     ]
     assert client.get("/templates/999").status_code == 404
@@ -365,6 +367,7 @@ def test_template_detail_includes_earliest_email_as_example(client: TestClient) 
         "is_transaction_alert": None,
         "email_count": 2,
         "account_id": None,
+        "field_parser_status": None,
         "example": {
             "id": 2,
             "message_id": "message-1",
@@ -399,6 +402,7 @@ def test_template_account_assignment_reassignment_and_unassignment(client: TestC
         "is_transaction_alert": None,
         "email_count": 2,
         "account_id": first_account.id,
+        "field_parser_status": None,
     }
     assert Template.get_by_id(selected.id).account_id == first_account.id
     assert {
@@ -600,6 +604,83 @@ def test_field_parser_snapshot_without_example_and_request_validation(client: Te
         assert (
             client.put(f"/templates/{template.id}/field-parsers", json=payload).status_code == 422
         )
+
+
+def test_field_parser_approval_and_status_lifecycle(client: TestClient) -> None:
+    template = Template.create(
+        text="Paid <NUMBER>",
+        is_transaction_alert=True,
+        transaction_extraction_status="failed",
+        transaction_extraction_error="old failure",
+    )
+    email = _email(1, template=template)
+    email.body = "Paid 19"
+    email.save()
+    parsers = {
+        **{name: {"rule": "missing"} for name in TRANSACTION_FIELD_NAMES},
+        "amount": {"rule": "extracted", "parameter_indices": [0]},
+    }
+
+    assert client.get(f"/templates/{template.id}").json()["field_parser_status"] == (
+        "needs_generation"
+    )
+    saved = client.put(f"/templates/{template.id}/field-parsers", json=parsers)
+
+    assert saved.status_code == 200
+    assert saved.json()["field_parser_status"] == "needs_review"
+    assert client.get("/templates").json()["items"][0]["field_parser_status"] == "needs_review"
+
+    approved = client.post(f"/templates/{template.id}/field-parsers/approve")
+
+    assert approved.status_code == 200
+    assert approved.json()["field_parser_status"] == "approved"
+    refreshed = Template.get_by_id(template.id)
+    assert refreshed.field_parsers_approved is True
+    assert refreshed.transaction_extraction_status == "pending"
+    assert refreshed.transaction_extraction_error is None
+    assert client.get(f"/templates/{template.id}").json()["field_parser_status"] == "approved"
+
+    resaved = client.put(f"/templates/{template.id}/field-parsers", json=parsers)
+    assert resaved.json()["field_parser_status"] == "needs_review"
+    assert Template.get_by_id(template.id).field_parsers_approved is False
+
+
+def test_field_parser_approval_rejects_ineligible_drafts(client: TestClient) -> None:
+    non_alert = Template.create(text="Paid <NUMBER>", is_transaction_alert=False)
+    incomplete = Template.create(text="Paid <NUMBER>", is_transaction_alert=True)
+    _email(1, template=incomplete)
+    no_example = Template.create(text="Receipt", is_transaction_alert=True)
+    invalid = Template.create(text="Paid <*>", is_transaction_alert=True)
+    invalid_email = _email(2, template=invalid)
+    invalid_email.body = "Paid $20"
+    invalid_email.save()
+    complete_missing = {name: {"rule": "missing"} for name in TRANSACTION_FIELD_NAMES}
+    assert (
+        client.put(f"/templates/{no_example.id}/field-parsers", json=complete_missing).status_code
+        == 200
+    )
+    assert (
+        client.put(
+            f"/templates/{invalid.id}/field-parsers",
+            json={
+                **complete_missing,
+                "amount": {"rule": "extracted", "parameter_indices": [0]},
+            },
+        ).status_code
+        == 200
+    )
+
+    not_alert_response = client.post(f"/templates/{non_alert.id}/field-parsers/approve")
+    incomplete_response = client.post(f"/templates/{incomplete.id}/field-parsers/approve")
+    no_example_response = client.post(f"/templates/{no_example.id}/field-parsers/approve")
+    invalid_response = client.post(f"/templates/{invalid.id}/field-parsers/approve")
+
+    assert not_alert_response.status_code == 409
+    assert incomplete_response.status_code == 409
+    assert no_example_response.status_code == 409
+    assert invalid_response.status_code == 422
+    assert "invalid amount" in invalid_response.json()["detail"]
+    assert client.post("/templates/999/field-parsers/approve").status_code == 404
 
 
 def test_generate_field_parsers_endpoint_replaces_and_previews(

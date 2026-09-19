@@ -211,8 +211,32 @@ def test_template_classification_migration_is_nullable_and_reversible(tmp_path: 
         "SELECT is_transaction_alert FROM templates WHERE id = 2"
     ).fetchone() == (None,)
 
-    runner.down()
+    runner.down("0009_store_readable_email_body")
 
     assert "is_transaction_alert" not in {
+        column.name for column in database.get_columns("templates")
+    }
+
+
+def test_field_parser_approval_migration_defaults_false_and_is_reversible(tmp_path: Path) -> None:
+    database = SqliteDatabase(str(tmp_path / "migration.sqlite3"), pragmas={"foreign_keys": 1})
+    runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
+    runner.up("0010_classify_transaction_alert_templates")
+    database.execute_sql(
+        "INSERT INTO templates (text, transaction_extraction_status) VALUES (?, ?)",
+        ("Paid <NUMBER>", "pending"),
+    )
+
+    runner.up()
+
+    columns = {column.name: column for column in database.get_columns("templates")}
+    assert columns["field_parsers_approved"].null is False
+    assert database.execute_sql(
+        "SELECT field_parsers_approved FROM templates WHERE id = 1"
+    ).fetchone() == (0,)
+
+    runner.down("0010_classify_transaction_alert_templates")
+
+    assert "field_parsers_approved" not in {
         column.name for column in database.get_columns("templates")
     }

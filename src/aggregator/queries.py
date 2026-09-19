@@ -68,8 +68,15 @@ def template_page(
     page: int, classifications: Collection[bool | None] | None = None
 ) -> Page[Template]:
     """Return templates with aggregate email counts in fixed-size pages."""
-    query = Template.select(Template, fn.COUNT(Email.id).alias("email_count")).join(
-        Email, join_type=JOIN.LEFT_OUTER
+    query = (
+        Template.select(
+            Template,
+            fn.COUNT(fn.DISTINCT(Email.id)).alias("email_count"),
+            fn.COUNT(fn.DISTINCT(FieldParser.id)).alias("field_parser_count"),
+        )
+        .join(Email, join_type=JOIN.LEFT_OUTER)
+        .switch(Template)
+        .join(FieldParser, join_type=JOIN.LEFT_OUTER)
     )
     if classifications is not None:
         classified_values = [value for value in classifications if value is not None]
@@ -84,8 +91,14 @@ def template_page(
 def template_by_id(template_id: int) -> Template | None:
     """Return one template annotated with its email count, if present."""
     query = (
-        Template.select(Template, fn.COUNT(Email.id).alias("email_count"))
+        Template.select(
+            Template,
+            fn.COUNT(fn.DISTINCT(Email.id)).alias("email_count"),
+            fn.COUNT(fn.DISTINCT(FieldParser.id)).alias("field_parser_count"),
+        )
         .join(Email, join_type=JOIN.LEFT_OUTER)
+        .switch(Template)
+        .join(FieldParser, join_type=JOIN.LEFT_OUTER)
         .where(Template.id == template_id)
         .group_by(Template.id)
     )

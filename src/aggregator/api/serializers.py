@@ -89,6 +89,7 @@ def template_response(template: TemplateRecord) -> TemplateResponse:
         is_transaction_alert=template.is_transaction_alert,
         email_count=template.email_count,
         account_id=template.account_id,
+        field_parser_status=template.field_parser_status,
     )
 
 
@@ -114,6 +115,7 @@ def parser_snapshot_response(snapshot: ParserSnapshot) -> TemplateFieldParsersRe
         text=snapshot.text,
         transaction_extraction_status=snapshot.transaction_extraction_status,
         transaction_extraction_error=snapshot.transaction_extraction_error,
+        field_parser_status=snapshot.field_parser_status,
         example_email_id=snapshot.example_email_id,
         parameters=indexed_parameter_responses(snapshot.parameters),
         parsers=snapshot.parsers,
