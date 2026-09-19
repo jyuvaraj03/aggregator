@@ -17,6 +17,27 @@ Apply the database schema migrations before running a sync:
 uv run pwmigrate up
 ```
 
+## Template classification privacy
+
+Template classification requires `JEV_API_KEY`. Before a mined template is sent to
+TypeSafe, the application sanitizes it locally with Presidio and the pinned
+`en_core_web_md` 3.8.0 spaCy model. `uv sync` installs the model package; classification
+never downloads model assets at runtime. The analyzer is initialized on the first
+classification and reused for the life of that process.
+
+The configured Presidio entities are person, location, email address, phone number,
+credit card, IBAN, URL, Indian PAN, and Aadhaar. Sanitization preserves mining markers
+such as `<NUMBER>`, `<DATE>`, and `<*>`. Only the sanitized copy enters TypeSafe state;
+the original template text remains in the database. A sanitizer or model failure stops
+classification before a TypeSafe client is created.
+
+Detection is best effort for English text and the Indian identifier formats supported by
+Presidio. Presidio does not guarantee detection of every value, and this configuration
+does not add project-specific recognition for UPI IDs, generic account numbers, masked
+identifiers, or complete postal-address blocks. The model package uses about 55 MiB on
+disk. In a local Linux measurement, loading it added about 270 MiB of peak resident memory
+to the process (about 400 MiB total); actual worker memory varies by platform and workload.
+
 ## Background actions
 
 Email sync, template assignment, parser generation, and transaction extraction run through

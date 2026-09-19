@@ -14,6 +14,7 @@ from typesafe_sdk import Noul
 from aggregator import template_classification
 from aggregator.database import PROJECT_ROOT, close_database, database, database_connection
 from aggregator.models import Template
+from aggregator.pii import PiiSanitizationError
 from aggregator.queries import TemplateNotFoundError
 
 
@@ -29,6 +30,14 @@ def isolated_database(tmp_path: Path) -> Generator[None]:
     finally:
         close_database()
         database.init(original_path)
+
+
+@pytest.fixture(autouse=True)
+def stub_pii_sanitizer(monkeypatch: pytest.MonkeyPatch) -> None:
+    def identity(text: str) -> str:
+        return text
+
+    monkeypatch.setattr(template_classification, "sanitize_template_text", identity)
 
 
 @pytest.mark.parametrize(
@@ -82,6 +91,46 @@ def test_typesafe_predictor_requires_api_key(
         template_classification.TemplateClassificationPredictor()
 
 
+def test_typesafe_predictor_sends_only_sanitized_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_text = "Amit Patel paid <NUMBER>; email amit@example.com"
+    sanitized_text = "<PERSON> paid <NUMBER>; email <EMAIL>"
+    sanitizer = MagicMock(return_value=sanitized_text)
+    monkeypatch.setattr(template_classification, "sanitize_template_text", sanitizer)
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.system_one.return_value = SimpleNamespace(
+        nouls={"is_transaction_alert": SimpleNamespace(noul=0.8)}
+    )
+    client_class = MagicMock(return_value=client)
+    monkeypatch.setattr(template_classification, "TypeSafeClient", client_class)
+
+    predictor = template_classification.TemplateClassificationPredictor(api_key="test-key")
+
+    assert predictor.predict(raw_text) is True
+    sanitizer.assert_called_once_with(raw_text)
+    client.system_one.assert_called_once()
+    request_state = client.system_one.call_args.kwargs["state"]
+    assert request_state == {"email_template": sanitized_text}
+    assert "Amit Patel" not in request_state["email_template"]
+    assert "amit@example.com" not in request_state["email_template"]
+    assert "paid <NUMBER>" in request_state["email_template"]
+
+
+def test_sanitizer_failure_prevents_client_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    sanitizer = MagicMock(side_effect=PiiSanitizationError("sanitizer unavailable"))
+    client_class = MagicMock()
+    monkeypatch.setattr(template_classification, "sanitize_template_text", sanitizer)
+    monkeypatch.setattr(template_classification, "TypeSafeClient", client_class)
+    predictor = template_classification.TemplateClassificationPredictor(api_key="test-key")
+
+    with pytest.raises(PiiSanitizationError, match="sanitizer unavailable"):
+        predictor.predict("Amit Patel paid <NUMBER>")
+
+    client_class.assert_not_called()
+
+
 def test_typesafe_predictor_propagates_service_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     client = MagicMock()
     client.__enter__.return_value = client
@@ -131,6 +180,32 @@ def test_classification_failure_preserves_existing_value(
         assert Template.get_by_id(template.id).is_transaction_alert is True
 
 
+def test_sanitizer_failure_preserves_template_and_classification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_text = "Amit Patel paid <NUMBER>"
+    with database_connection():
+        template = Template.create(text=original_text, is_transaction_alert=True)
+
+    monkeypatch.setenv("JEV_API_KEY", "test-key")
+    monkeypatch.setattr(
+        template_classification,
+        "sanitize_template_text",
+        MagicMock(side_effect=PiiSanitizationError("sanitizer unavailable")),
+    )
+    client_class = MagicMock()
+    monkeypatch.setattr(template_classification, "TypeSafeClient", client_class)
+
+    with pytest.raises(PiiSanitizationError, match="sanitizer unavailable"):
+        template_classification.classify_template(template.id)
+
+    client_class.assert_not_called()
+    with database_connection():
+        stored_template = Template.get_by_id(template.id)
+        assert stored_template.text == original_text
+        assert stored_template.is_transaction_alert is True
+
+
 @pytest.mark.parametrize("prediction", [True, False, None])
 def test_classification_persists_and_returns_detached_result(
     monkeypatch: pytest.MonkeyPatch,
@@ -155,7 +230,9 @@ def test_classification_persists_and_returns_detached_result(
     predictor.predict.assert_called_once_with("Paid <NUMBER>")
     assert database.is_closed()
     with database_connection():
-        assert Template.get_by_id(template.id).is_transaction_alert is prediction
+        stored_template = Template.get_by_id(template.id)
+        assert stored_template.text == "Paid <NUMBER>"
+        assert stored_template.is_transaction_alert is prediction
 
 
 def test_missing_template_does_not_create_predictor(monkeypatch: pytest.MonkeyPatch) -> None:

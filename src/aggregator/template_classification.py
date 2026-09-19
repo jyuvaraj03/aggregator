@@ -13,6 +13,7 @@ from typesafe_sdk import Noul, RetryPolicy, TypeSafeClient
 from . import queries
 from .database import PROJECT_ROOT, database, database_connection
 from .models import Template
+from .pii import sanitize_template_text
 
 _TRANSACTION_ALERT_QUESTION = Noul(
     instructions="Is the given email template a bank/wallet/card transaction alert?"
@@ -35,12 +36,13 @@ class TemplateClassificationPredictor:
 
     def predict(self, template_text: str) -> bool | None:
         """Predict whether a mined template is a transaction alert."""
+        sanitized_template_text = sanitize_template_text(template_text)
         with TypeSafeClient(
             api_key=self._api_key,
             retry=RetryPolicy(max_retries=0),
         ) as client:
             response = client.system_one(
-                state={"email_template": template_text},
+                state={"email_template": sanitized_template_text},
                 questions={"is_transaction_alert": _TRANSACTION_ALERT_QUESTION},
             )
 
