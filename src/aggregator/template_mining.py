@@ -14,7 +14,7 @@ from drain3.masking import AbstractMaskingInstruction, MaskingInstruction
 from drain3.template_miner_config import TemplateMinerConfig
 from iso4217 import Currency
 
-_AMOUNT_BODY_PATTERN = r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.\d+)?"
+_AMOUNT_BODY_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.\d+)?"
 _AMOUNT_END_PATTERN = r"(?![\w]|\.\d|,\d)"
 _ISO_CURRENCY_CODES_PATTERN = "|".join(currency.code for currency in Currency)
 _CURRENCY_BODY_PATTERN = (

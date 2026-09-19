@@ -192,8 +192,6 @@ def test_date_masking_regex_rejects_invalid_or_embedded_dates(value: str) -> Non
         "0",
         "007",
         "42",
-        "+42",
-        "-42",
         "1.0",
         "123.456",
         "1,234",
@@ -203,8 +201,6 @@ def test_date_masking_regex_rejects_invalid_or_embedded_dates(value: str) -> Non
         "1,23,45,678",
         "1,234.56",
         "12,34,567.89",
-        "+1,234.56",
-        "-12,345,678.90",
     ],
 )
 def test_number_masking_regex_matches_supported_number_formats(value: str) -> None:
@@ -217,6 +213,8 @@ def test_number_masking_regex_matches_supported_number_formats(value: str) -> No
         "",
         "+",
         "-",
+        "+42",
+        "-42",
         ".5",
         "+.5",
         "-.5",
@@ -243,7 +241,7 @@ def test_number_masking_regex_rejects_unsupported_number_formats(value: str) -> 
     ("text", "expected"),
     [
         ("Order #42 confirmed", ["42"]),
-        ("Balances: -7, +8.25, and 1,234.50.", ["-7", "+8.25", "1,234.50"]),
+        ("Balances: -7, +8.25, and 1,234.50.", ["7", "8.25", "1,234.50"]),
         ("($1,250.50) or ₹0", ["1,250.50", "0"]),
         ("[007]; {12,345,678}; ₹12,34,567.89", ["007", "12,345,678", "12,34,567.89"]),
     ],
@@ -275,6 +273,19 @@ def test_parameter_extraction_supports_an_iso_currency_code() -> None:
     assert [(parameter.value, parameter.mask_name) for parameter in parameters] == [
         ("MYR", "CURRENCY_CODE"),
         ("700.00", "NUMBER"),
+    ]
+
+
+def test_number_masking_preserves_a_hyphen_between_a_date_and_reference() -> None:
+    text = "Salary for AUGUST 2026-1883955754"
+
+    result = bulk_mine_templates([MiningRecord("salary", text)])
+
+    assert result.patterns == (MinedPattern("Salary for <DATE>-<NUMBER>", ("salary",)),)
+    parameters = get_extracted_parameters(MiningRecord("salary", text), result.patterns[0].text)
+    assert [(parameter.value, parameter.mask_name) for parameter in parameters] == [
+        ("AUGUST 2026", "DATE"),
+        ("1883955754", "NUMBER"),
     ]
 
 
