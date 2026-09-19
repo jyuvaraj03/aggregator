@@ -1,5 +1,6 @@
 """Application read operations that prepare results before releasing their connection."""
 
+from collections.abc import Collection
 from dataclasses import replace
 from decimal import Decimal
 from typing import cast
@@ -94,9 +95,11 @@ def _template_record(template: Template) -> TemplateRecord:
     )
 
 
-def template_page(page: int) -> Page[TemplateRecord]:
+def template_page(
+    page: int, classifications: Collection[bool | None] | None = None
+) -> Page[TemplateRecord]:
     with database_connection():
-        result = queries.template_page(page)
+        result = queries.template_page(page, classifications)
         return Page([_template_record(template) for template in result.items], result.total)
 
 

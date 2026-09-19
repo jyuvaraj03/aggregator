@@ -5,13 +5,20 @@ import { ErrorState, Pagination, readPage, ReceivedTime } from "../../components
 import { ApiError } from "../../lib/api/client";
 import { emailPageOptions } from "../emails/queries";
 import { templateDetailOptions } from "./queries";
-import { templateHref } from "./navigation";
+import {
+    readTemplateView,
+    templateDetailSearch,
+    templateEmailHref,
+    templateHref,
+    templateListHref,
+} from "./navigation";
 
 export function TemplateDetailScreen() {
     const { templateId } = useParams();
     const [search, setSearch] = useSearchParams();
     const page = readPage(search.get("page"));
     const emailsPage = readPage(search.get("emailsPage"));
+    const view = readTemplateView(search.get("classification"));
     const id = Number(templateId);
     const validId = Number.isSafeInteger(id) && id > 0;
     const template = useQuery({ ...templateDetailOptions(id), enabled: validId });
@@ -21,12 +28,11 @@ export function TemplateDetailScreen() {
         ...emailPageOptions(emailsPage, id),
         enabled: validId && template.isSuccess,
     });
-    const emailHref = (emailId: number) =>
-        `/emails/${emailId}?fromTemplate=${id}&templatePage=${page}&emailsPage=${emailsPage}`;
+    const emailHref = (emailId: number) => templateEmailHref(emailId, id, page, emailsPage, view);
 
     return (
         <>
-            <Link className="back-link" to={`/templates?page=${page}`}>
+            <Link className="back-link" to={templateListHref(page, view)}>
                 Back to templates
             </Link>
             {missing ? (
@@ -136,7 +142,7 @@ export function TemplateDetailScreen() {
                                                 : "Return to the first page to browse matching emails."}
                                         </p>
                                         {emailsPage > 1 && (
-                                            <Link to={templateHref(id, page)}>
+                                            <Link to={templateHref(id, page, 1, view)}>
                                                 Go to first page
                                             </Link>
                                         )}
@@ -147,7 +153,7 @@ export function TemplateDetailScreen() {
                                     totalPages={emails.data.total_pages}
                                     label="Matching email pages"
                                     onPage={(next) =>
-                                        setSearch({ page: String(page), emailsPage: String(next) })
+                                        setSearch(templateDetailSearch(view, page, next))
                                     }
                                 />
                             </>

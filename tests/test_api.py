@@ -272,6 +272,84 @@ def test_template_counts_and_missing_resource(client: TestClient) -> None:
     assert client.get("/templates/999").status_code == 404
 
 
+@pytest.mark.parametrize(
+    "classifications",
+    [
+        None,
+        ("transaction_alert",),
+        ("unclassified",),
+        ("not_transaction_alert",),
+        ("transaction_alert", "unclassified"),
+        ("transaction_alert", "not_transaction_alert"),
+        ("unclassified", "not_transaction_alert"),
+        ("transaction_alert", "unclassified", "not_transaction_alert"),
+    ],
+    ids=[
+        "omitted",
+        "transaction-alert",
+        "unclassified",
+        "not-transaction-alert",
+        "alerts-and-unclassified",
+        "classified",
+        "not-alert-or-unclassified",
+        "all-values",
+    ],
+)
+def test_template_classification_filters_totals_ordering_and_pagination(
+    client: TestClient, classifications: tuple[str, ...] | None
+) -> None:
+    values = {
+        "transaction_alert": True,
+        "unclassified": None,
+        "not_transaction_alert": False,
+    }
+    template_ids: dict[bool | None, list[int]] = {True: [], None: [], False: []}
+    for classification in (True, None, False):
+        for index in range(26):
+            template = Template.create(
+                text=f"{classification}-{index}", is_transaction_alert=classification
+            )
+            template_ids[classification].append(template.id)
+
+    expected_values = (
+        set(template_ids)
+        if classifications is None
+        else {values[value] for value in classifications}
+    )
+    expected_ids = sorted(
+        (template_id for value in expected_values for template_id in template_ids[value]),
+        reverse=True,
+    )
+    params = (
+        []
+        if classifications is None
+        else [("classification", classification) for classification in classifications]
+    )
+
+    first_page = client.get("/templates", params=[*params, ("page", "1")])
+
+    assert first_page.status_code == 200
+    assert first_page.json()["total"] == len(expected_ids)
+    assert first_page.json()["total_pages"] == (len(expected_ids) + 49) // 50
+    assert [item["id"] for item in first_page.json()["items"]] == expected_ids[:50]
+    assert {item["is_transaction_alert"] for item in first_page.json()["items"]}.issubset(
+        expected_values
+    )
+
+    if len(expected_ids) > 50:
+        second_page = client.get("/templates", params=[*params, ("page", "2")])
+        assert second_page.status_code == 200
+        assert second_page.json()["total"] == len(expected_ids)
+        assert [item["id"] for item in second_page.json()["items"]] == expected_ids[50:]
+
+
+@pytest.mark.parametrize("classification", ["transaction", "true", ""])
+def test_template_classification_filter_rejects_invalid_values(
+    client: TestClient, classification: str
+) -> None:
+    assert client.get("/templates", params={"classification": classification}).status_code == 422
+
+
 def test_template_detail_includes_earliest_email_as_example(client: TestClient) -> None:
     template = Template.create(text="receipt")
     _email(2, template=template)

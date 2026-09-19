@@ -56,9 +56,123 @@ test.beforeEach(async ({ page }) => {
     await mockWorkspace(page);
 });
 
-test("empty state explains that syncing creates templates automatically", async ({ page }) => {
+test("default view requests alerts and unclassified templates", async ({ page }) => {
+    const requestedClassifications: string[][] = [];
+    const templates = [
+        { ...template, id: 9, text: "Included alert", is_transaction_alert: true },
+        { ...template, id: 8, text: "Included review", is_transaction_alert: null },
+        { ...template, id: 7, text: "Excluded non-alert", is_transaction_alert: false },
+    ];
+    await page.route("**/api/templates?*", (route) => {
+        const url = new URL(route.request().url());
+        const classifications = url.searchParams.getAll("classification");
+        requestedClassifications.push(classifications);
+        const included = templates.filter((item) => {
+            const classification =
+                item.is_transaction_alert === true
+                    ? "transaction_alert"
+                    : item.is_transaction_alert === false
+                      ? "not_transaction_alert"
+                      : "unclassified";
+            return classifications.includes(classification);
+        });
+        return route.fulfill({ json: paginated(included, 1, included.length) });
+    });
+
+    await page.goto("/templates");
+
+    await expect(page.getByText("Included alert")).toBeVisible();
+    await expect(page.getByText("Included review")).toBeVisible();
+    await expect(page.getByText("Excluded non-alert")).toHaveCount(0);
+    expect(requestedClassifications.at(-1)).toEqual(["transaction_alert", "unclassified"]);
+    await expect(
+        page.getByRole("link", { name: "Alerts & needs review", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL("/templates");
+});
+
+test("classification tabs expose URLs, reset pages, and show every badge state", async ({
+    page,
+}) => {
+    const requests: string[][] = [];
+    await page.route("**/api/templates?*", (route) => {
+        const url = new URL(route.request().url());
+        requests.push(url.searchParams.getAll("classification"));
+        return route.fulfill({
+            json: paginated(
+                [
+                    { ...template, id: 9, is_transaction_alert: true },
+                    { ...template, id: 8, is_transaction_alert: null },
+                    { ...template, id: 7, is_transaction_alert: false },
+                ],
+                Number(url.searchParams.get("page")),
+                3,
+            ),
+        });
+    });
+    await page.goto("/templates?page=4&classification=not_transaction_alert");
+
+    await expect(
+        page.getByRole("link", { name: "Alerts & needs review", exact: true }),
+    ).toHaveAttribute("href", "/templates?page=1");
+    await expect(
+        page.getByRole("link", { name: "Transaction alerts", exact: true }),
+    ).toHaveAttribute("href", "/templates?page=1&classification=transaction_alert");
+    await expect(page.getByRole("link", { name: "Needs review", exact: true })).toHaveAttribute(
+        "href",
+        "/templates?page=1&classification=unclassified",
+    );
+    await expect(
+        page.getByRole("link", { name: "Not transaction alerts", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "All templates", exact: true })).toHaveAttribute(
+        "href",
+        "/templates?page=1&classification=all",
+    );
+
+    await page.getByRole("link", { name: "All templates", exact: true }).click();
+    await expect(page).toHaveURL("/templates?page=1&classification=all");
+    await expect.poll(() => requests.at(-1)).toEqual([]);
+    await expect(
+        page.locator(".classification-badge").getByText("Transaction alert", { exact: true }),
+    ).toBeVisible();
+    await expect(
+        page.locator(".classification-badge").getByText("Needs review", { exact: true }),
+    ).toBeVisible();
+    await expect(
+        page.locator(".classification-badge").getByText("Not transaction alert", {
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await page.getByRole("link", { name: "Needs review", exact: true }).click();
+    await expect(page).toHaveURL("/templates?page=1&classification=unclassified");
+    await expect.poll(() => requests.at(-1)).toEqual(["unclassified"]);
+});
+
+test("filtered empty states are specific and reserve syncing guidance for all templates", async ({
+    page,
+}) => {
     await page.route("**/api/templates?*", (route) => route.fulfill({ json: paginated([], 1, 0) }));
     await page.goto("/templates");
+
+    await expect(
+        page.getByRole("heading", { name: "No alerts or templates needing review" }),
+    ).toBeVisible();
+    await expect(page.getByText("Sync your emails to create templates automatically.")).toHaveCount(
+        0,
+    );
+
+    await page.getByRole("link", { name: "Transaction alerts", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "No transaction alerts" })).toBeVisible();
+
+    await page.getByRole("link", { name: "Needs review", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "No templates need review" })).toBeVisible();
+
+    await page.getByRole("link", { name: "Not transaction alerts", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "No non-transaction alerts" })).toBeVisible();
+
+    await page.getByRole("link", { name: "All templates", exact: true }).click();
     await expect(page.getByRole("heading", { name: "No templates yet" })).toBeVisible();
     await expect(
         page.getByText("Sync your emails to create templates automatically."),
@@ -79,7 +193,7 @@ test("template and matching-email pagination survive detail navigation and reloa
         filters.push(url.searchParams.get("template_id") ?? "missing");
         return route.fulfill({ json: paginated([email], Number(url.searchParams.get("page"))) });
     });
-    await page.goto("/templates?page=2");
+    await page.goto("/templates?page=2&classification=unclassified");
     await expect(page.getByRole("link", { name: "Templates", exact: true })).toHaveAttribute(
         "aria-current",
         "page",
@@ -87,7 +201,7 @@ test("template and matching-email pagination survive detail navigation and reloa
     await expect(page).toHaveTitle("Templates · Aggregator");
     await page.screenshot({ path: testInfo.outputPath("templates.png"), fullPage: true });
     await page.getByRole("link", { name: /Template 7/ }).click();
-    await expect(page).toHaveURL("/templates/7?page=2&emailsPage=1");
+    await expect(page).toHaveURL("/templates/7?page=2&emailsPage=1&classification=unclassified");
     await expect(page).toHaveTitle("Template detail · Aggregator");
     await expect(page.locator("#main")).toBeFocused();
     await expect(page.getByRole("region", { name: "Template pattern" })).toContainText(pattern);
@@ -95,19 +209,21 @@ test("template and matching-email pagination survive detail navigation and reloa
     await expect(page.getByRole("navigation", { name: "Matching email pages" })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("template-detail.png"), fullPage: true });
     await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(page).toHaveURL("/templates/7?page=2&emailsPage=2");
+    await expect(page).toHaveURL("/templates/7?page=2&emailsPage=2&classification=unclassified");
     await page
         .getByRole("region", { name: "Matching emails" })
         .getByRole("link", { name: /Your account activity/ })
         .click();
-    await expect(page).toHaveURL("/emails/12?fromTemplate=7&templatePage=2&emailsPage=2");
+    await expect(page).toHaveURL(
+        "/emails/12?fromTemplate=7&templatePage=2&emailsPage=2&classification=unclassified",
+    );
     await page.reload();
     await page.getByRole("link", { name: "Back to template", exact: true }).click();
-    await expect(page).toHaveURL("/templates/7?page=2&emailsPage=2");
+    await expect(page).toHaveURL("/templates/7?page=2&emailsPage=2&classification=unclassified");
     await expect(page.getByText("Page 2 of 2")).toBeVisible();
     expect(filters.every((filter) => filter === "7")).toBe(true);
     await page.getByRole("link", { name: "Back to templates", exact: true }).click();
-    await expect(page).toHaveURL("/templates?page=2");
+    await expect(page).toHaveURL("/templates?page=2&classification=unclassified");
 });
 
 test("loading, failed read, retry and out-of-range template pages", async ({ page }) => {

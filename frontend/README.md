@@ -32,12 +32,15 @@ After each successful email sync, the worker mines all stored emails without a t
 and starts parser generation for every newly created template. These later stages continue
 in the background after the sync result appears. Emails already assigned keep their template.
 
-Browse templates at `/templates?page=1`, then open a template to inspect its full
-pattern, example email, and paginated matching messages. Template detail URLs retain
-the template-list page in `page` and the matching-email page in `emailsPage`.
-Links to email details carry `fromTemplate`, `templatePage`, and `emailsPage` so
-**Back to template** returns to the same position. Email details also link to their
-assigned template. Patterns and example bodies are rendered as plain text.
+Browse templates at `/templates?page=1`. The default view includes transaction alerts
+and templates that still need review; classification tabs can narrow the list or show
+all templates. The selected non-default view is stored in `classification` and retained
+through pagination. Open a template to inspect its full pattern, example email, and
+paginated matching messages. Template detail URLs retain the template-list page in
+`page`, the matching-email page in `emailsPage`, and the selected classification view.
+Links to email details carry the same navigation context so **Back to template** and
+**Back to templates** return to the same position and filter. Email details also link
+to their assigned template. Patterns and example bodies are rendered as plain text.
 
 Template inspection is read-only; parser generation progress, accounts, and transaction
 extraction are not part of this interface.

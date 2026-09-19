@@ -4,6 +4,7 @@
 # pyright: reportAttributeAccessIssue=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import cast
 
@@ -63,14 +64,20 @@ def transaction_page(page: int) -> Page[Transaction]:
     return Page[Transaction](list(query.paginate(page, PAGE_SIZE)), query.count())
 
 
-def template_page(page: int) -> Page[Template]:
+def template_page(
+    page: int, classifications: Collection[bool | None] | None = None
+) -> Page[Template]:
     """Return templates with aggregate email counts in fixed-size pages."""
-    query = (
-        Template.select(Template, fn.COUNT(Email.id).alias("email_count"))
-        .join(Email, join_type=JOIN.LEFT_OUTER)
-        .group_by(Template.id)
-        .order_by(Template.id.desc())
+    query = Template.select(Template, fn.COUNT(Email.id).alias("email_count")).join(
+        Email, join_type=JOIN.LEFT_OUTER
     )
+    if classifications is not None:
+        classified_values = [value for value in classifications if value is not None]
+        predicate = Template.is_transaction_alert.in_(classified_values)
+        if None in classifications:
+            predicate |= Template.is_transaction_alert.is_null()
+        query = query.where(predicate)
+    query = query.group_by(Template.id).order_by(Template.id.desc())
     return Page[Template](list(query.paginate(page, PAGE_SIZE)), query.count())
 
 

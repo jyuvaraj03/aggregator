@@ -484,6 +484,11 @@ export interface components {
             /** Account Id */
             account_id: number | null;
         };
+        /**
+         * TemplateClassification
+         * @enum {string}
+         */
+        TemplateClassification: "transaction_alert" | "unclassified" | "not_transaction_alert";
         /** TemplateDetailResponse */
         TemplateDetailResponse: {
             /** Id */
@@ -849,6 +854,7 @@ export interface operations {
         parameters: {
             query?: {
                 page?: number;
+                classification?: components["schemas"]["TemplateClassification"][] | null;
             };
             header?: never;
             path?: never;

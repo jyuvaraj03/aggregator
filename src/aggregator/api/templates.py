@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Query
 
 from .. import template_accounts
@@ -13,11 +16,30 @@ from .serializers import template_email_example, template_response
 router = APIRouter(prefix="/templates", tags=["templates"])
 
 
+class TemplateClassification(StrEnum):
+    TRANSACTION_ALERT = "transaction_alert"
+    UNCLASSIFIED = "unclassified"
+    NOT_TRANSACTION_ALERT = "not_transaction_alert"
+
+    def query_value(self) -> bool | None:
+        if self is TemplateClassification.TRANSACTION_ALERT:
+            return True
+        if self is TemplateClassification.NOT_TRANSACTION_ALERT:
+            return False
+        return None
+
+
 @router.get("", response_model=TemplatePage)
 def list_templates(
     page: int = Query(default=1, ge=1),
+    classification: Annotated[list[TemplateClassification] | None, Query()] = None,
 ) -> TemplatePage:
-    result = template_page(page)
+    classifications = (
+        frozenset(value.query_value() for value in classification)
+        if classification is not None
+        else None
+    )
+    result = template_page(page, classifications)
     return TemplatePage(
         items=[template_response(template) for template in result.items],
         total=result.total,
