@@ -167,6 +167,8 @@ def test_bulk_mine_templates_picks_existing_templates_before_mining_new_ones() -
         "2026.09.3",
         "03-09-2026",
         "3/9/26",
+        "31-AUG-2026",
+        "1-september-26",
         "Aug 23, 2026",
         "aug. 23rd 2026",
         "September 1st, 26",
@@ -286,6 +288,20 @@ def test_number_masking_preserves_a_hyphen_between_a_date_and_reference() -> Non
     assert [(parameter.value, parameter.mask_name) for parameter in parameters] == [
         ("AUGUST 2026", "DATE"),
         ("1883955754", "NUMBER"),
+    ]
+
+
+def test_template_mining_masks_a_hyphenated_month_name_date_atomically() -> None:
+    text = "Transaction date: 31-AUG-2026"
+
+    result = bulk_mine_templates([MiningRecord("transaction", text)])
+
+    assert result.patterns == (MinedPattern("Transaction date: <DATE>", ("transaction",)),)
+    parameters = get_extracted_parameters(
+        MiningRecord("transaction", text), result.patterns[0].text
+    )
+    assert [(parameter.value, parameter.mask_name) for parameter in parameters] == [
+        ("31-AUG-2026", "DATE"),
     ]
 
 
