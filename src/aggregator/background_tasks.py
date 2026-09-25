@@ -137,15 +137,21 @@ def classify_template_task(
                 "template_id": result.template_id,
                 "is_transaction_alert": result.is_transaction_alert,
             }
+            if result.skipped_due_to_approval:
+                completed_classification["_skipped_due_to_approval"] = True
 
         parser_generation_job_id: str | None = None
-        if completed_classification["is_transaction_alert"] is True:
+        if completed_classification[
+            "is_transaction_alert"
+        ] is True and not completed_classification.get("_skipped_due_to_approval", False):
             retry_args = (template_id, completed_classification)
             parser_job = generate_field_parsers_task.delay(template_id)
             parser_generation_job_id = parser_job.id
 
+        public_classification = dict(completed_classification)
+        public_classification.pop("_skipped_due_to_approval", None)
         return {
-            **completed_classification,
+            **public_classification,
             "parser_generation_job_id": parser_generation_job_id,
         }
     except Exception as error:

@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 
 from ..parser_configuration import FieldParserSet, FieldParserStatus
 
@@ -94,6 +94,12 @@ class TemplateAccountUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     account_id: StrictInt | None
+
+
+class TemplateClassificationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_transaction_alert: StrictBool
 
 
 class TemplateDetailResponse(TemplateResponse):

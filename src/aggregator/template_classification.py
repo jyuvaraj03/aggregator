@@ -1,7 +1,7 @@
 """Application operations for classifying mined email templates."""
 
 # Peewee exposes dynamically typed fields and query methods.
-# pyright: reportAttributeAccessIssue=false, reportUnknownMemberType=false
+# pyright: reportAttributeAccessIssue=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 from __future__ import annotations
 
 import os
@@ -95,12 +95,34 @@ class TemplateClassificationResult:
 
     template_id: int
     is_transaction_alert: bool | None
+    skipped_due_to_approval: bool = False
+
+
+class TemplateClassificationApprovedError(Exception):
+    """An approved parser locks the template classification."""
+
+
+def set_template_classification(template_id: int, classification: bool) -> None:
+    """Set a manual classification unless its parser has been approved."""
+    with database_connection():
+        with database.atomic():
+            updated = (
+                Template.update(is_transaction_alert=classification)
+                .where((Template.id == template_id) & ~Template.field_parsers_approved)
+                .execute()
+            )
+            if not updated:
+                template = queries.require_template(template_id)
+                if template.field_parsers_approved:
+                    raise TemplateClassificationApprovedError("Template field parsers are approved")
 
 
 def classify_template(template_id: int) -> TemplateClassificationResult:
     """Predict and persist the transaction-alert classification for a template."""
     with database_connection():
         template = queries.require_template(template_id)
+        if template.field_parsers_approved:
+            return TemplateClassificationResult(template_id, template.is_transaction_alert, True)
         template_text = str(template.text)
 
     prediction = TemplateClassificationPredictor().predict(template_text)
@@ -109,9 +131,18 @@ def classify_template(template_id: int) -> TemplateClassificationResult:
 
     with database_connection():
         with database.atomic():
-            template = queries.require_template(template_id)
-            template.is_transaction_alert = prediction
-            template.save(only=[Template.is_transaction_alert])
+            updated = (
+                Template.update(is_transaction_alert=prediction)
+                .where((Template.id == template_id) & ~Template.field_parsers_approved)
+                .execute()
+            )
+            if not updated:
+                template = queries.require_template(template_id)
+                return TemplateClassificationResult(
+                    template_id,
+                    template.is_transaction_alert,
+                    bool(template.field_parsers_approved),
+                )
 
     return TemplateClassificationResult(
         template_id=template_id,

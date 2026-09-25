@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # Peewee and its migration helper are dynamically typed.
-# pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownMemberType=false
+# pyright: reportAttributeAccessIssue=false, reportFunctionMemberAccess=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -10,7 +10,7 @@ import pytest
 from playhouse.migrations import Runner
 from typesafe_sdk import Noul, NoulAnswer, SystemOneResponse, Usage
 
-from aggregator import template_classification
+from aggregator import background_tasks, template_classification
 from aggregator.database import PROJECT_ROOT, close_database, database, database_connection
 from aggregator.models import Template
 from aggregator.pii import PiiSanitizationError
@@ -334,3 +334,44 @@ def test_missing_template_does_not_create_predictor(monkeypatch: pytest.MonkeyPa
         template_classification.classify_template(999)
     predictor_class.assert_not_called()
     assert database.is_closed()
+
+
+@pytest.mark.parametrize("approval_phase", ["before_prediction", "during_prediction"])
+def test_approval_prevents_classifier_write_and_parser_job(
+    monkeypatch: pytest.MonkeyPatch, approval_phase: str
+) -> None:
+    with database_connection():
+        template = Template.create(text="Paid <NUMBER>", is_transaction_alert=True)
+        if approval_phase == "before_prediction":
+            template.field_parsers_approved = True
+            template.save(only=[Template.field_parsers_approved])
+
+    predictor = MagicMock(spec=template_classification.TemplateClassificationPredictor)
+
+    def predict(_: str) -> bool:
+        with database_connection():
+            Template.update(field_parsers_approved=True).where(Template.id == template.id).execute()
+        return False
+
+    predictor.predict.side_effect = predict
+    predictor_class = MagicMock(return_value=predictor)
+    monkeypatch.setattr(template_classification, "TemplateClassificationPredictor", predictor_class)
+    monkeypatch.setattr(
+        background_tasks.generate_field_parsers_task,
+        "delay",
+        lambda _: pytest.fail("parser was queued"),
+    )
+
+    result = background_tasks.classify_template_task.run(template.id)
+
+    assert result == {
+        "template_id": template.id,
+        "is_transaction_alert": True,
+        "parser_generation_job_id": None,
+    }
+    with database_connection():
+        assert Template.get_by_id(template.id).is_transaction_alert is True
+    if approval_phase == "before_prediction":
+        predictor_class.assert_not_called()
+    else:
+        predictor.predict.assert_called_once_with("Paid <NUMBER>")

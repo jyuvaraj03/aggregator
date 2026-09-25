@@ -1,0 +1,17 @@
+meta {
+  name: Mark Not Transaction Alert
+  type: http
+  seq: 10
+}
+
+put {
+  url: {{baseUrl}}/templates/1/classification
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "is_transaction_alert": false
+  }
+}

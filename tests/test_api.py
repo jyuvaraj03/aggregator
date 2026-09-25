@@ -275,6 +275,75 @@ def test_template_counts_and_missing_resource(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize(
+    ("classification", "filter_value"),
+    [(True, "transaction_alert"), (False, "not_transaction_alert")],
+)
+def test_manual_template_classification_updates_response_and_filters(
+    client: TestClient, classification: bool, filter_value: str
+) -> None:
+    template = Template.create(text="Paid <NUMBER>")
+    email = _email(1, template=template)
+    transaction = Transaction.create(email=email)
+
+    response = client.put(
+        f"/templates/{template.id}/classification",
+        json={"is_transaction_alert": classification},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": template.id,
+        "text": "Paid <NUMBER>",
+        "is_transaction_alert": classification,
+        "email_count": 1,
+        "account_id": None,
+        "field_parser_status": "needs_generation" if classification else None,
+    }
+    assert Template.get_by_id(template.id).is_transaction_alert is classification
+    assert Transaction.get_by_id(transaction.id).email_id == email.id
+    assert client.get(f"/templates/{template.id}").json()["is_transaction_alert"] is classification
+    filtered = client.get("/templates", params={"classification": filter_value}).json()
+    assert filtered["total"] == 1
+    assert [item["id"] for item in filtered["items"]] == [template.id]
+    assert client.get("/templates", params={"classification": "unclassified"}).json()["total"] == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"is_transaction_alert": None},
+        {"is_transaction_alert": 1},
+        {"is_transaction_alert": "true"},
+        {"is_transaction_alert": True, "extra": 1},
+    ],
+)
+def test_manual_template_classification_rejects_invalid_body(
+    client: TestClient, body: dict[str, object]
+) -> None:
+    template = Template.create(text="Paid <NUMBER>")
+    assert client.put(f"/templates/{template.id}/classification", json=body).status_code == 422
+    assert Template.get_by_id(template.id).is_transaction_alert is None
+
+
+def test_manual_template_classification_missing_and_approved_conflict(client: TestClient) -> None:
+    assert (
+        client.put("/templates/999/classification", json={"is_transaction_alert": True}).status_code
+        == 404
+    )
+    template = Template.create(
+        text="Paid <NUMBER>", is_transaction_alert=True, field_parsers_approved=True
+    )
+    for classification in (True, False):
+        response = client.put(
+            f"/templates/{template.id}/classification",
+            json={"is_transaction_alert": classification},
+        )
+        assert response.status_code == 409
+        assert Template.get_by_id(template.id).is_transaction_alert is True
+
+
+@pytest.mark.parametrize(
     "classifications",
     [
         None,
