@@ -37,19 +37,10 @@ than an opaque step in transaction creation.
 
 ## Operating Context
 
-The current application runs locally with a React, TypeScript, and Vite frontend
-and a Python FastAPI backend backed by SQLite. Gmail access uses the user's
-locally configured Google credentials with read-only mailbox access.
-
-The current browser workflow accepts a Gmail label and start date, syncs messages,
-reports pulled, inserted, and already-stored counts, and lets the user browse
-stored emails and inspect their bodies as plain text. Pagination survives detail
-navigation, and received times use the browser's locale and timezone.
-
-The Templates tab lets the user browse classified patterns, inspect examples, and
-open matching emails while retaining list pagination. Transaction-alert details
-also support generating, correcting, saving, previewing, and approving field
-parsers.
+The current application runs locally with a Python FastAPI backend backed by
+SQLite. Gmail access uses the user's locally configured Google credentials with
+read-only mailbox access. There is currently no browser interface; a new frontend
+is planned.
 
 Local operation describes the existing implementation; a permanent local-only
 deployment requirement has not been established.
@@ -58,8 +49,8 @@ deployment requirement has not been established.
 
 ### Existing implementation
 
-- The web interface provides email sync, paginated browsing, email detail,
-  template extraction, and template inspection with paginated matching emails.
+- Backend APIs support email sync, paginated browsing, email detail, template
+  extraction, and template inspection with paginated matching emails.
 - Backend APIs support template assignment and inspection, account management,
   template-to-account assignment, parser generation and replacement, transaction
   extraction, and transaction listing.
@@ -75,8 +66,7 @@ deployment requirement has not been established.
 
 ### Intended behavior and open decisions
 
-- The browser should eventually support the complete workflow above; current
-  email-only screens do not define the long-term product boundary.
+- The future browser interface should support the complete workflow above.
 - Transaction export is an intended capability. Export formats, destinations,
   and selection behavior remain undecided.
 - Supported banks, required currencies, and any permanent deployment or external
@@ -85,12 +75,10 @@ deployment requirement has not been established.
 ## Evidence on Hand
 
 - `README.md` documents local setup, Gmail credentials, and parser generation.
-- `frontend/README.md` and `frontend/src/features/emails/` establish the current
-  browser capabilities and behavior.
 - `src/aggregator/api/` and `docs/bruno/` establish the backend operations and
   example API requests.
-- `tests/` and `frontend/tests/emails.spec.ts` contain behavioral coverage and
-  fixtures. Fixtures are not evidence of supported banks or extraction accuracy.
+- `tests/` contains backend behavioral coverage and fixtures. Fixtures are not
+  evidence of supported banks or extraction accuracy.
 
 ## Product Principles
 
@@ -103,6 +91,5 @@ deployment requirement has not been established.
 ## Accessibility & Inclusion
 
 Accessibility is not a top product priority at this stage. No specific conformance
-target or additional user needs have been established. Existing keyboard access,
-focus behavior, semantic labels, and status announcements remain part of the
-current interface.
+target or additional user needs have been established. Accessibility requirements
+for the future interface remain to be defined.

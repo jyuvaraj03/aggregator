@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Start the local infrastructure, API, Celery worker, and frontend together.
+# Start the local infrastructure, API, and Celery worker together.
 set -Eeuo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,12 +27,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 docker compose up &
-process_ids+=("$!")
-
-(
-    cd frontend
-    npm run dev
-) &
 process_ids+=("$!")
 
 uv run aggregator-api &

@@ -187,21 +187,16 @@ Gmail's standard search behavior also excludes Spam and Trash.
 
 ## Development
 
-### Local email frontend
+### Local services
 
-The React application in [`frontend/`](frontend/README.md) lets you choose a sync start
-date and inspect all stored emails. Start `uv run aggregator-api`, then run
-`npm ci` and `npm run dev` from `frontend/`. Open http://127.0.0.1:5173.
-See the frontend README for API type generation and browser test commands.
-
-To start Redis and the other Compose services, the API, Celery worker, and frontend
+To start Redis and the other Compose services, the API, and Celery worker
 together, run this from the repository root:
 
 ```bash
 bin/dev
 ```
 
-Press Ctrl-C to stop all four processes.
+Press Ctrl-C to stop all three processes.
 
 ### Backend checks
 

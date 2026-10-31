@@ -18,8 +18,5 @@ aggregator.sqlite3-journal
 aggregator.sqlite3-shm
 aggregator.sqlite3-wal
 
-# Frontend dependencies and local test artifacts
+# Local Node.js dependencies
 node_modules/
-frontend/playwright-report/
-frontend/test-results/
-*.tsbuildinfo
