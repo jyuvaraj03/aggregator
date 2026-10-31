@@ -72,7 +72,7 @@ def test_account_creation_trims_name_and_rejects_invalid_names(client: TestClien
     response = client.post("/accounts", json={"name": "  Checking  "})
 
     assert response.status_code == 201
-    assert response.json() == {"id": 1, "name": "Checking"}
+    assert response.json() == {"id": 1, "name": "Checking", "color": 0}
     assert Account.get_by_id(1).name == "Checking"
     assert client.post("/accounts", json={"name": " \t\n "}).status_code == 422
     assert client.post("/accounts", json={}).status_code == 422
@@ -103,11 +103,13 @@ def test_account_detail_pagination_and_invalid_page(client: TestClient) -> None:
     assert payload["page_size"] == 50
     assert payload["total_pages"] == 2
     assert len(payload["items"]) == 50
-    assert payload["items"][0] == {"id": 51, "name": "Account 50"}
-    assert client.get("/accounts?page=2").json()["items"] == [{"id": 1, "name": "Account 0"}]
+    assert payload["items"][0] == {"id": 51, "name": "Account 50", "color": 0}
+    assert client.get("/accounts?page=2").json()["items"] == [
+        {"id": 1, "name": "Account 0", "color": 0}
+    ]
     assert client.get("/accounts?page=0").status_code == 422
     assert client.get("/accounts?page=invalid").status_code == 422
-    assert client.get("/accounts/1").json() == {"id": 1, "name": "Account 0"}
+    assert client.get("/accounts/1").json() == {"id": 1, "name": "Account 0", "color": 0}
     assert client.get("/accounts/999").status_code == 404
 
 
@@ -118,7 +120,7 @@ def test_account_rename_and_missing_update(client: TestClient) -> None:
     renamed = client.patch(f"/accounts/{first.id}", json={"name": "  Primary  "})
 
     assert renamed.status_code == 200
-    assert renamed.json() == {"id": first.id, "name": "Primary"}
+    assert renamed.json() == {"id": first.id, "name": "Primary", "color": 0}
     assert client.patch(f"/accounts/{first.id}", json={"name": "Primary"}).status_code == 200
     assert client.patch(f"/accounts/{first.id}", json={"name": "Second"}).status_code == 409
     assert client.patch(f"/accounts/{first.id}", json={"name": "  "}).status_code == 422
@@ -521,38 +523,62 @@ def test_template_account_assignment_validates_before_updating(client: TestClien
         assert client.put(f"/templates/{template.id}/account", json=payload).status_code == 422
 
 
-def test_account_deletion_cascades_transactions_and_preserves_templates(
-    client: TestClient,
+def test_account_deletion_preserves_linked_transactions(client: TestClient) -> None:
+    account = Account.create(name="Checking")
+    template = Template.create(text="receipt", account=account)
+    email = _email(1, template=template)
+    transaction = Transaction.create(email=email, account=account)
+
+    response = client.delete(f"/accounts/{account.id}")
+
+    assert response.status_code == 409
+    assert "saved transactions" in response.json()["detail"]
+    assert Account.get_by_id(account.id).name == "Checking"
+    assert Template.get_by_id(template.id).account_id == account.id
+    assert Transaction.get_by_id(transaction.id).account_id == account.id
+    assert Email.get_by_id(email.id).template_id == template.id
+
+
+def test_account_deletion_unassigns_templates_without_transactions(client: TestClient) -> None:
+    account = Account.create(name="Unused")
+    template = Template.create(text="receipt", account=account)
+    assert client.delete(f"/accounts/{account.id}").status_code == 204
+    assert Template.get_by_id(template.id).account_id is None
+
+
+def test_account_color_create_and_partial_updates(client: TestClient) -> None:
+    response = client.post("/accounts", json={"name": "Travel", "color": 19})
+    assert response.status_code == 201
+    assert response.json() == {"id": 1, "name": "Travel", "color": 19}
+    assert client.patch("/accounts/1", json={"color": 3}).json() == {
+        "id": 1,
+        "name": "Travel",
+        "color": 3,
+    }
+    assert client.patch("/accounts/1", json={"name": "Trips"}).json() == {
+        "id": 1,
+        "name": "Trips",
+        "color": 3,
+    }
+    assert Account.get_by_id(1).color == 3
+    assert client.get("/accounts").json()["items"][0]["color"] == 3
+    assert client.patch("/accounts/999", json={"color": 2}).status_code == 404
+
+
+@pytest.mark.parametrize("color", [-1, 20, True, "2", 1.5, None])
+def test_account_color_rejects_invalid_values(client: TestClient, color: object) -> None:
+    assert client.post("/accounts", json={"name": "Invalid", "color": color}).status_code == 422
+    account = Account.create(name="Valid", color=5)
+    assert client.patch(f"/accounts/{account.id}", json={"color": color}).status_code == 422
+    assert Account.get_by_id(account.id).color == 5
+
+
+@pytest.mark.parametrize("payload", [{}, {"name": None}, {"extra": "x"}])
+def test_account_patch_requires_supplied_non_null_fields(
+    client: TestClient, payload: dict[str, object]
 ) -> None:
-    deleted_account = Account.create(name="Deleted")
-    other_account = Account.create(name="Other")
-    deleted_template = Template.create(text="receipt", account=deleted_account)
-    other_template = Template.create(text="other", account=other_account)
-    deleted_email = _email(1, template=deleted_template)
-    other_email = _email(2, template=other_template)
-    deleted_transaction = Transaction.create(email=deleted_email, account=deleted_account)
-    other_transaction = Transaction.create(email=other_email, account=other_account)
-
-    response = client.delete(f"/accounts/{deleted_account.id}")
-
-    assert response.status_code == 204
-    assert Template.get_by_id(deleted_template.id).account_id is None
-    assert Template.get_by_id(other_template.id).account_id == other_account.id
-    assert Transaction.get_or_none(Transaction.id == deleted_transaction.id) is None
-    assert Transaction.get_by_id(other_transaction.id).account_id == other_account.id
-
-    parser_response = client.put(
-        f"/templates/{deleted_template.id}/field-parsers",
-        json={
-            **{name: {"rule": "missing"} for name in TRANSACTION_FIELD_NAMES},
-            "amount": {"rule": "constant", "constant_value": "10"},
-        },
-    )
-    assert parser_response.status_code == 200
-    assert client.post("/transaction-extraction").status_code == 202
-    client.put(f"/templates/{deleted_template.id}/account", json={"account_id": other_account.id})
-    assert client.post("/transaction-extraction").status_code == 202
-    assert Transaction.get_or_none(Transaction.email == deleted_email) is None
+    account = Account.create(name="Valid")
+    assert client.patch(f"/accounts/{account.id}", json=payload).status_code == 422
 
 
 def test_email_representation_shapes_for_index_and_detail(client: TestClient) -> None:

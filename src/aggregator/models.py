@@ -16,6 +16,7 @@ from peewee import (
     DateField,
     DateTimeField,
     ForeignKeyField,
+    IntegerField,
     Model,
     TextField,
 )
@@ -74,6 +75,7 @@ class Account(Model):
 
     id = AutoField()
     name = TextField(unique=True)
+    color = IntegerField(default=0)
 
     class Meta:
         database = database

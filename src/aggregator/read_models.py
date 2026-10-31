@@ -19,6 +19,7 @@ class Page[Item]:
 class AccountRecord:
     id: int
     name: str
+    color: int = 0
 
 
 @dataclass(frozen=True, slots=True)

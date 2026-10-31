@@ -8,7 +8,7 @@ from typing import cast
 from peewee import IntegrityError
 
 from .database import database_connection
-from .models import Account
+from .models import Account, Transaction
 from .queries import PAGE_SIZE
 from .read_models import AccountRecord, Page
 
@@ -19,6 +19,14 @@ class AccountNotFoundError(Exception):
 
 class InvalidAccountNameError(Exception):
     """The supplied account name is blank after normalization."""
+
+
+class AccountInUseError(Exception):
+    """The account has saved transactions and cannot be removed."""
+
+
+class InvalidAccountColorError(ValueError):
+    """The account colour is outside the palette."""
 
 
 class AccountNameConflictError(Exception):
@@ -33,15 +41,16 @@ def _normalized_name(name: str) -> str:
 
 
 def _record(account: Account) -> AccountRecord:
-    return AccountRecord(id=account.id, name=account.name)
+    return AccountRecord(id=account.id, name=account.name, color=account.color)
 
 
-def create_account(name: str) -> AccountRecord:
+def create_account(name: str, color: int = 0) -> AccountRecord:
     """Create an account with a normalized, unique name."""
     normalized = _normalized_name(name)
+    _validate_color(color)
     with database_connection() as connection, connection.atomic():
         try:
-            return _record(Account.create(name=normalized))
+            return _record(Account.create(name=normalized, color=color))
         except IntegrityError as error:
             raise AccountNameConflictError("Account name already exists") from error
 
@@ -61,16 +70,26 @@ def account_by_id(account_id: int) -> AccountRecord | None:
         return _record(account) if account is not None else None
 
 
-def rename_account(account_id: int, name: str) -> AccountRecord:
-    """Rename an existing account after normalizing and validating its name."""
-    normalized = _normalized_name(name)
+def _validate_color(color: int) -> None:
+    if type(color) is not int or not 0 <= color <= 19:
+        raise InvalidAccountColorError("Account color must be an integer from 0 to 19")
+
+
+def update_account(
+    account_id: int, *, name: str | None = None, color: int | None = None
+) -> AccountRecord:
+    """Update supplied account attributes atomically."""
+    normalized = _normalized_name(name) if name is not None else None
+    if color is not None:
+        _validate_color(color)
     with database_connection() as connection, connection.atomic():
         account = Account.get_or_none(Account.id == account_id)
         if account is None:
             raise AccountNotFoundError("Account not found")
-        if account.name == normalized:
-            return _record(account)
-        account.name = normalized
+        if normalized is not None:
+            account.name = normalized
+        if color is not None:
+            account.color = color
         try:
             account.save()
         except IntegrityError as error:
@@ -80,7 +99,11 @@ def rename_account(account_id: int, name: str) -> AccountRecord:
 
 def delete_account(account_id: int) -> None:
     """Delete an account or report that it does not exist."""
-    with database_connection() as connection, connection.atomic():
+    with database_connection() as connection, connection.atomic("IMMEDIATE"):
+        if Transaction.select().where(Transaction.account == account_id).exists():
+            raise AccountInUseError(
+                "This account has saved transactions. Moving transactions is not available yet."
+            )
         deleted = cast(int, Account.delete().where(Account.id == account_id).execute())
         if deleted == 0:
             raise AccountNotFoundError("Account not found")

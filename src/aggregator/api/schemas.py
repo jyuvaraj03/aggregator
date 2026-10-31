@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from ..parser_configuration import FieldParserSet, FieldParserStatus
 
@@ -136,17 +136,30 @@ class TransactionPage(BaseModel):
     total_pages: int
 
 
+AccountColor = Annotated[StrictInt, Field(ge=0, le=19)]
+
+
 class AccountCreate(BaseModel):
     name: str
+    color: AccountColor = 0
 
 
 class AccountUpdate(BaseModel):
-    name: str
+    name: str | None = None
+    color: AccountColor | None = None
+
+    @model_validator(mode="after")
+    def validate_patch(self) -> Self:
+        fields = self.model_fields_set & {"name", "color"}
+        if not fields or any(getattr(self, field) is None for field in fields):
+            raise ValueError("Supply a non-null name and/or color")
+        return self
 
 
 class AccountResponse(BaseModel):
     id: int
     name: str
+    color: int
 
 
 class AccountPage(BaseModel):

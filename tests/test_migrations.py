@@ -85,7 +85,7 @@ def test_account_migration_adds_unique_storage_and_rolls_back(tmp_path: Path) ->
     runner.up()
 
     assert "accounts" in database.get_tables()
-    assert [column.name for column in database.get_columns("accounts")] == ["id", "name"]
+    assert [column.name for column in database.get_columns("accounts")] == ["id", "name", "color"]
     database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Checking",))
     with pytest.raises(IntegrityError, match="UNIQUE constraint failed"):
         database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Checking",))
@@ -240,3 +240,22 @@ def test_field_parser_approval_migration_defaults_false_and_is_reversible(tmp_pa
     assert "field_parsers_approved" not in {
         column.name for column in database.get_columns("templates")
     }
+
+
+def test_account_color_migration_backfills_validates_and_reverses(tmp_path: Path) -> None:
+    database = SqliteDatabase(str(tmp_path / "colors.sqlite3"), pragmas={"foreign_keys": 1})
+    runner = Runner(database, directory=str(PROJECT_ROOT / "migrations"))
+    runner.up("0011_add_field_parser_approval")
+    database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Existing",))
+    runner.up()
+    assert database.execute_sql("SELECT color FROM accounts").fetchone() == (0,)
+    database.execute_sql("INSERT INTO accounts (name) VALUES (?)", ("Default",))
+    with pytest.raises(IntegrityError):
+        database.execute_sql("UPDATE accounts SET color = 20")
+    runner.down()
+    assert "color" not in {column.name for column in database.get_columns("accounts")}
+    assert database.execute_sql("SELECT name FROM accounts ORDER BY id").fetchall() == [
+        ("Existing",),
+        ("Default",),
+    ]
+    database.close()

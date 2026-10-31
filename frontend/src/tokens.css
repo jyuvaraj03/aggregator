@@ -1,0 +1,157 @@
+:root {
+  --surface-page: #e9ecf1;
+  --surface-panel: #eef0f4;
+  --surface-paper: #ffffff;
+  --surface-paper-edge: #f3f4f7;
+  --border-card: #dce0e7;
+  --border-input: #e1e5eb;
+  --border-divider: #e7e9ed;
+  --ink-strong: #1f242c;
+  --ink-body: #333c49;
+  --ink-heading: #505b6c;
+  --ink-muted: #8a93a3;
+  --ink-meta: #7b8088;
+  --ink-placeholder: #c5cbd3;
+  --action-primary: #393a3e;
+  --action-primary-hover: #2c2d30;
+  --action-primary-ink: #ffffff;
+  --action-primary-disabled: #c9cace;
+  --action-secondary: #dadee6;
+  --action-secondary-hover: #cfd4dd;
+  --action-secondary-ink: #3a4352;
+  --action-danger: #f2dde3;
+  --action-danger-hover: #ecd0d9;
+  --action-danger-ink: #c4162f;
+  --key-chip-primary: #4a4b50;
+  --key-chip-primary-ink: #9a9ba0;
+  --key-chip-secondary: #ced3db;
+  --key-chip-danger: #e6d1d8;
+  --key-chip-ink: #5b6473;
+  --nav-surface: #d7dde6;
+  --nav-ink: #62779a;
+  --brand-blue: #3b71c6;
+  --focus-ring: var(--brand-blue);
+  --clip-blue: #5fb3e6;
+  --clip-blue-deep: #2b86c9;
+  --clip-steel: #d6dbe2;
+  --var-amount-bg: #fdf0fb;
+  --var-amount-line: #eea3e0;
+  --var-merchant-bg: #eaf4fb;
+  --var-merchant-line: #8cc1e4;
+  --var-date-bg: #fefbdf;
+  --var-date-line: #d4c947;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --radius-xs: 6px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  --shadow-paper:
+    0 1px 2px rgba(31, 36, 44, 0.06), 0 10px 28px rgba(31, 36, 44, 0.08);
+  --shadow-panel: 0 16px 48px rgba(31, 36, 44, 0.05);
+  --font-sans:
+    "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+}
+:root {
+  --nav-pill: #e9edf2;
+  --nav-pill-ink: #4d5f7e;
+  --shine: #ffffff;
+  --label-grey: #e6e9ee;
+  --seg-on: #ffffff;
+  --var-desc-bg: #eef7f2;
+  --var-desc-line: #93cfb2;
+  --var-desc-ink: #2d7656;
+  --fixed-bg: #eef0fb;
+  --fixed-line: #aab2e6;
+  --fixed-ink: #3c4796;
+  --silver: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.82) 0%,
+    rgba(232, 236, 241, 0.66) 42%,
+    rgba(208, 214, 223, 0.62) 100%
+  );
+}
+:root {
+  --var-other-bg: #f3f4f6;
+  --var-other-line: #b4bbc6;
+  --var-amount-ink: #ad3596;
+  --var-merchant-ink: #23699a;
+  --var-date-ink: #786d0a;
+}
+
+:root {
+  --surface-page: #f4f6f9;
+  --surface-panel: #f9fafc;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-page: #14171c;
+  --surface-panel: #1a1e24;
+  --surface-paper: #22272e;
+  --surface-paper-edge: #1e2329;
+  --border-card: #343b45;
+  --border-input: #3a414b;
+  --border-divider: #2f353e;
+  --ink-strong: #f1f3f6;
+  --ink-body: #d3d8df;
+  --ink-heading: #c6cdd7;
+  --ink-muted: #8790a0;
+  --ink-meta: #9aa3b1;
+  --ink-placeholder: #616a78;
+  --action-primary: #e8ebf0;
+  --action-primary-hover: #ffffff;
+  --action-primary-ink: #14171c;
+  --action-primary-disabled: #3a4049;
+  --action-secondary: #2a3038;
+  --action-secondary-hover: #353c46;
+  --action-secondary-ink: #d3d8df;
+  --action-danger: #36222a;
+  --action-danger-hover: #432830;
+  --action-danger-ink: #ff8b9c;
+  --key-chip-primary: #d0d5dc;
+  --key-chip-primary-ink: #4a5260;
+  --key-chip-secondary: #3a414b;
+  --key-chip-danger: #4b2c35;
+  --key-chip-ink: #aab2bf;
+  --nav-surface: #2a3038;
+  --nav-ink: #a4b6d4;
+  --nav-pill: #232830;
+  --nav-pill-ink: #b9c6dc;
+  --brand-blue: #79a3e6;
+  --shine: #ffffff;
+  --label-grey: #2a3038;
+  --seg-on: #3c434e;
+  --var-amount-bg: #3a2236;
+  --var-amount-line: #a8569b;
+  --var-amount-ink: #f0a6e2;
+  --var-merchant-bg: #1b3040;
+  --var-merchant-line: #4a87b1;
+  --var-merchant-ink: #8dc6ee;
+  --var-date-bg: #322f19;
+  --var-date-line: #a1972f;
+  --var-date-ink: #e2d777;
+  --var-other-bg: #2a2f37;
+  --var-other-line: #5a6270;
+  --var-desc-bg: #18332a;
+  --var-desc-line: #4a9a78;
+  --var-desc-ink: #8fd8b6;
+  --fixed-bg: #262b4a;
+  --fixed-line: #5e68b8;
+  --fixed-ink: #b7befa;
+  --silver: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.08) 45%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  --shadow-paper:
+    0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.35);
+  --shadow-panel: 0 16px 48px rgba(0, 0, 0, 0.3);
+}

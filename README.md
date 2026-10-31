@@ -206,3 +206,52 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pyright
 ```
+
+### Frontend
+
+The first two template-review screens (sync and account setup) live in `frontend/`.
+Use Node.js 22.14 or newer and npm. From the repository root:
+
+```bash
+uv run pwmigrate up
+bin/dev
+```
+
+In another terminal:
+
+```bash
+cd frontend
+npm ci
+cp .env.example .env.local
+npm run dev
+```
+
+Open http://127.0.0.1:5173. Vite proxies `/api` to FastAPI on port 8000.
+`VITE_SYNC_LOOKBACK_DAYS` defaults to 30 calendar days before today; restart Vite
+after changing it. Gmail credentials, Redis, the worker, and the configured model
+providers must be available for the complete processing chain to finish.
+
+Opening the app starts sync once per tab session. Refresh resumes the same job;
+failed processing offers an explicit restart with the original date. The UI tracks
+sync, template assignment, classification, and parser generation before showing
+“See templates”. That button currently opens a review placeholder.
+
+Accounts and their card colours persist in SQLite. Migration 0012 adds the colour
+column (existing accounts default to Ocean). Account PATCH accepts name and/or
+colour. Accounts with saved transactions cannot be removed: DELETE returns 409.
+Transaction reassignment and the review screens are deferred.
+
+```bash
+cd frontend
+npm test
+npm run lint
+npm run build
+npx playwright install chromium  # once, if not installed
+npm run test:e2e
+```
+
+Browser tests mock the API; they never sync the real inbox. Their visual captures
+are written to `.impeccable/review/` (ignored by Git). The supplied mockup and screen
+spec are kept in `docs/frontend-reference/`; the bundled font comes from that HTML.
+The preview server is for inspecting static builds; API proxying is configured for
+the development server only. Production hosting is outside this slice.

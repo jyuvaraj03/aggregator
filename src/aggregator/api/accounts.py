@@ -15,15 +15,15 @@ router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
 def _response(account: AccountRecord) -> AccountResponse:
-    return AccountResponse(id=account.id, name=account.name)
+    return AccountResponse(id=account.id, name=account.name, color=account.color)
 
 
 def _raise_http_error(error: Exception) -> Never:
     if isinstance(error, accounts.AccountNotFoundError):
         raise HTTPException(status_code=404, detail=str(error)) from error
-    if isinstance(error, accounts.InvalidAccountNameError):
+    if isinstance(error, (accounts.InvalidAccountNameError, accounts.InvalidAccountColorError)):
         raise HTTPException(status_code=422, detail=str(error)) from error
-    if isinstance(error, accounts.AccountNameConflictError):
+    if isinstance(error, (accounts.AccountNameConflictError, accounts.AccountInUseError)):
         raise HTTPException(status_code=409, detail=str(error)) from error
     raise error
 
@@ -31,7 +31,7 @@ def _raise_http_error(error: Exception) -> Never:
 @router.post("", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
 def create_account(payload: AccountCreate) -> AccountResponse:
     try:
-        return _response(accounts.create_account(payload.name))
+        return _response(accounts.create_account(payload.name, payload.color))
     except (accounts.InvalidAccountNameError, accounts.AccountNameConflictError) as error:
         _raise_http_error(error)
 
@@ -59,7 +59,9 @@ def get_account(account_id: int) -> AccountResponse:
 @router.patch("/{account_id}", response_model=AccountResponse)
 def update_account(account_id: int, payload: AccountUpdate) -> AccountResponse:
     try:
-        return _response(accounts.rename_account(account_id, payload.name))
+        return _response(
+            accounts.update_account(account_id, name=payload.name, color=payload.color)
+        )
     except (
         accounts.AccountNotFoundError,
         accounts.InvalidAccountNameError,
@@ -72,6 +74,6 @@ def update_account(account_id: int, payload: AccountUpdate) -> AccountResponse:
 def remove_account(account_id: int) -> Response:
     try:
         accounts.delete_account(account_id)
-    except accounts.AccountNotFoundError as error:
+    except (accounts.AccountNotFoundError, accounts.AccountInUseError) as error:
         _raise_http_error(error)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

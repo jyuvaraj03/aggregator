@@ -20,3 +20,11 @@ aggregator.sqlite3-wal
 
 # Local Node.js dependencies
 node_modules/
+
+# Frontend build, checks, and local configuration
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/
+frontend/.env.local
+.impeccable/review/
