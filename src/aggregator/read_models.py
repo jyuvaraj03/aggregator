@@ -70,3 +70,6 @@ class ParserSnapshot:
     parameters: tuple[tuple[str, str | None], ...]
     parsers: FieldParserSet
     preview: dict[str, str | None] | None
+    session_id: int | None = None
+    session_round: int | None = None
+    session_status: str | None = None

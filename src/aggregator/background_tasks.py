@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import NoReturn
+from typing import Any, NoReturn
 from uuid import uuid4
 
 from celery.exceptions import Ignore
@@ -14,7 +14,14 @@ from celery.exceptions import Ignore
 from .celery_app import celery_app
 from .email_pull import CredentialsError, InvalidInputError
 from .email_sync import sync_messages
-from .field_parsers import FieldParserGenerationError, generate_and_replace_field_parsers
+from .field_parsers import FieldParserGenerationError
+from .parser_review import (
+    ParserSessionSupersededError,
+    mark_job_failed,
+    queue_generation,
+    run_generation_job,
+    supersede_job,
+)
 from .template_assignment import assign_email_templates
 from .template_assignment_queue import (
     TemplateAssignmentSupersededError,
@@ -145,7 +152,7 @@ def classify_template_task(
             "is_transaction_alert"
         ] is True and not completed_classification.get("_skipped_due_to_approval", False):
             retry_args = (template_id, completed_classification)
-            parser_job = generate_field_parsers_task.delay(template_id)
+            parser_job = queue_parser_generation(template_id)
             parser_generation_job_id = parser_job.id
 
         public_classification = dict(completed_classification)
@@ -159,9 +166,11 @@ def classify_template_task(
 
 
 @celery_app.task(bind=True, name="aggregator.field_parser_generation", max_retries=2)
-def generate_field_parsers_task(self: object, template_id: int) -> dict[str, object]:
+def generate_field_parsers_task(
+    self: object, template_id: int, session_id: int, job_id: str, feedback: str | None = None
+) -> dict[str, object]:
     try:
-        snapshot = generate_and_replace_field_parsers(template_id)
+        snapshot = run_generation_job(template_id, session_id, job_id, feedback)
         return {
             "template_id": snapshot.template_id,
             "text": snapshot.text,
@@ -175,9 +184,28 @@ def generate_field_parsers_task(self: object, template_id: int) -> dict[str, obj
             ],
             "parsers": snapshot.parsers.model_dump(mode="json"),
             "preview": snapshot.preview,
+            "session_id": snapshot.session_id,
+            "session_round": snapshot.session_round,
+            "session_status": snapshot.session_status,
         }
     except Exception as error:
+        if isinstance(error, ParserSessionSupersededError):
+            supersede_job(session_id, job_id)
+            _mark_superseded(self)
+        if isinstance(error, _PERMANENT_ERRORS) or self.request.retries >= 2:
+            mark_job_failed(session_id, job_id)
         _retryable(self, error)
+
+
+def queue_parser_generation(template_id: int, feedback: str | None = None) -> Any:
+    """Reserve a durable session before publishing its task."""
+
+    def submit(template: int, session: int, job: str, comment: str | None) -> object:
+        return generate_field_parsers_task.apply_async(
+            args=(template, session, job, comment), task_id=job
+        )
+
+    return queue_generation(template_id, feedback, submit)
 
 
 @celery_app.task(bind=True, name="aggregator.transaction_extraction", max_retries=2)

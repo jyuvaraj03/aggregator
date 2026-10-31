@@ -1,0 +1,23 @@
+meta {
+  name: Correct Field Parsers
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/templates/1/field-parsers/generate
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "feedback": "Use the debited amount instead of the available balance."
+  }
+}
+
+docs {
+  Resumes the parser session awaiting review and queues a correction job. The job
+  result includes the session ID, round, and status. You can send further feedback
+  after reviewing the new draft. Blank or null feedback starts a new session.
+}

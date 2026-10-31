@@ -6,7 +6,7 @@ from typing import Literal, cast
 
 from . import parser_generation, queries
 from .database import database, database_connection
-from .models import FieldParser, Template, TransactionExtractionStatus
+from .models import FieldParser, ParserGenerationSession, Template, TransactionExtractionStatus
 from .parser_configuration import (
     TRANSACTION_FIELD_NAMES,
     ConstantFieldParser,
@@ -62,6 +62,14 @@ def _snapshot(template: Template, parsers: FieldParserSet) -> ParserSnapshot:
             values[index] = parameter.value
         preview = representation.resolved_fields
 
+    session = (
+        ParserGenerationSession.select()
+        .where(ParserGenerationSession.template == template.id)
+        .order_by(ParserGenerationSession.id.desc())
+        .first()
+    )
+    if session is not None and session.status == "superseded":
+        session = None
     return ParserSnapshot(
         template_id=template.id,
         text=template.text,
@@ -78,6 +86,9 @@ def _snapshot(template: Template, parsers: FieldParserSet) -> ParserSnapshot:
         parameters=tuple(zip(masks, values, strict=True)),
         parsers=parsers,
         preview=preview,
+        session_id=session.id if session is not None else None,
+        session_round=session.current_round if session is not None else None,
+        session_status=session.status if session is not None else None,
     )
 
 
@@ -162,25 +173,8 @@ def approve_field_parsers(template_id: int) -> ParserSnapshot:
     with database_connection():
         with database.atomic():
             template = queries.require_template(template_id)
-            if template.is_transaction_alert is not True:
-                raise TemplateNotTransactionAlertError(
-                    "Template is not classified as a transaction alert"
-                )
             parsers = queries.parser_sets({template_id: template})[template_id]
-            if set(parsers.configured()) != set(TRANSACTION_FIELD_NAMES):
-                raise IncompleteFieldParsersError(
-                    "Configure all transaction fields before approving this parser"
-                )
-            example = queries.example_email(template.id)
-            if example is None:
-                raise MissingParserExampleError(
-                    "An example email is required before approving this parser"
-                )
-            representation = represent_email_template(template.text, example.body, parsers)
-            try:
-                extract_transaction(representation)
-            except ValueError as error:
-                raise InvalidParserPreviewError(str(error)) from error
+            _validate_approval(template, parsers)
 
             template.field_parsers_approved = True
             template.transaction_extraction_status = TransactionExtractionStatus.PENDING.value
@@ -193,3 +187,28 @@ def approve_field_parsers(template_id: int) -> ParserSnapshot:
                 ]
             )
             return _snapshot(template, parsers.model_copy(deep=True))
+
+
+def require_field_parsers_approvable(template_id: int) -> None:
+    """Check approval requirements without changing the draft or graph position."""
+    with database_connection():
+        template = queries.require_template(template_id)
+        parsers = queries.parser_sets({template_id: template})[template_id]
+        _validate_approval(template, parsers)
+
+
+def _validate_approval(template: Template, parsers: FieldParserSet) -> None:
+    if template.is_transaction_alert is not True:
+        raise TemplateNotTransactionAlertError("Template is not classified as a transaction alert")
+    if set(parsers.configured()) != set(TRANSACTION_FIELD_NAMES):
+        raise IncompleteFieldParsersError(
+            "Configure all transaction fields before approving this parser"
+        )
+    example = queries.example_email(template.id)
+    if example is None:
+        raise MissingParserExampleError("An example email is required before approving this parser")
+    try:
+        representation = represent_email_template(template.text, example.body, parsers)
+        extract_transaction(representation)
+    except (ValueError, IndexError) as error:
+        raise InvalidParserPreviewError(str(error)) from error

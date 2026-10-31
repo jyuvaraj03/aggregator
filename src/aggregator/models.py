@@ -16,6 +16,7 @@ from peewee import (
     DateField,
     DateTimeField,
     ForeignKeyField,
+    IntegerField,
     Model,
     TextField,
 )
@@ -124,6 +125,24 @@ class FieldParser(Model):
         database = database
         table_name = "field_parsers"
         indexes = ((("template", "field_name"), True),)
+
+
+class ParserGenerationSession(Model):
+    """One checkpointed parser generation and review conversation."""
+
+    id = AutoField()
+    template = ForeignKeyField(Template, backref="parser_generation_sessions", on_delete="CASCADE")
+    thread_id = CharField(unique=True)
+    status = CharField()
+    current_round = IntegerField(default=1)
+    active_job_id = CharField(null=True)
+    published_fingerprint = CharField(null=True)
+    template_text = TextField()
+    examples_json = TextField()
+
+    class Meta:
+        database = database
+        table_name = "parser_generation_sessions"
 
 
 class Email(Model):

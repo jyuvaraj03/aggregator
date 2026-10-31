@@ -124,4 +124,7 @@ def parser_snapshot_response(snapshot: ParserSnapshot) -> TemplateFieldParsersRe
             if snapshot.preview is not None
             else None
         ),
+        session_id=snapshot.session_id,
+        session_round=snapshot.session_round,
+        session_status=snapshot.session_status,
     )

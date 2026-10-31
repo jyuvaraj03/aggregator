@@ -9,7 +9,7 @@ from typing import Any, Literal, cast
 from dotenv import load_dotenv
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable
 from langchain_mistralai import ChatMistralAI
 from langchain_openai import ChatOpenAI
@@ -99,10 +99,13 @@ def _correction(
         raise ParserGenerationError(
             f"Parser generation failed after {_MAX_ATTEMPTS} attempts: {error}"
         ) from error
+    raw = getattr(error, "llm_output", None)
+    history = [AIMessage(content=str(raw))] if raw is not None else []
     return {
         "attempts": attempts,
         "parsers": None,
         "messages": [
+            *history,
             HumanMessage(
                 content=(
                     f"The parser response failed validation: {error}\n"
@@ -110,7 +113,7 @@ def _correction(
                     "Return a corrected complete parser set for all seven fields, "
                     "following the original instructions."
                 )
-            )
+            ),
         ],
     }
 
@@ -151,11 +154,14 @@ def _build_graph(
         except (ValidationError, OutputParserException) as error:
             return _correction(error, attempts)
         parsers = FieldParserSet.model_validate(response.model_dump())
+        response_message = AIMessage(content=response.model_dump_json())
         try:
             validate_parser_set(parsers, state["parameter_count"])
         except ValueError as error:
-            return _correction(error, attempts)
-        return {"parsers": parsers, "attempts": attempts}
+            correction = _correction(error, attempts)
+            correction["messages"] = [response_message, *cast(list[Any], correction["messages"])]
+            return correction
+        return {"parsers": parsers, "attempts": attempts, "messages": [response_message]}
 
     def verify_transactions(state: _GenerationState) -> dict[str, object]:
         parsers = state["parsers"]

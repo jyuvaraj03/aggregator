@@ -72,6 +72,27 @@ uv run python -m aggregator cli
 
 ## Generate field parsers
 
+The API starts generation with `POST /templates/{template_id}/field-parsers/generate`.
+The request body is optional. To correct a published draft, send
+`{"feedback":"Use the debited amount instead of the available balance."}` to the same
+endpoint. Blank or null feedback starts a new generation session. The endpoint returns
+`202` and a job URL; the job succeeds when a validated draft is saved and review is
+ready. Read `GET /templates/{template_id}/field-parsers` for the draft, preview, and
+nullable `session_id`, `session_round`, and `session_status` fields. Send more feedback
+to revise the draft, or approve it with `POST /templates/{template_id}/field-parsers/approve`.
+Feedback can be up to 4,000 characters. Concurrent generation, manual saves, and
+approval for the same template return `409`.
+
+Review sessions and LangGraph checkpoints are stored in the application SQLite
+database. Apply migrations before starting the API or worker. Set
+`AGGREGATOR_DATABASE_PATH` for an isolated database; both application records and
+checkpoints use that path. A worker restart preserves the pending review and its
+conversation history. Manual parser saves supersede the active session. A failed
+correction leaves the previously saved parser and its approval state intact.
+
+The Python function and CLI below only infer a parser set; they do not create a
+review session or save rules.
+
 Copy `.env.example` to `.env` and select the parser-generation backend with
 `PARSER_GENERATION_PROVIDER`. It defaults to `ollama` and accepts `ollama` or `mistral`.
 

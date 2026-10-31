@@ -275,8 +275,8 @@ def test_classification_task_does_not_queue_parser_for_ineligible_result(
         lambda template_id: TemplateClassificationResult(template_id, classification),
     )
     monkeypatch.setattr(
-        background_tasks.generate_field_parsers_task,
-        "delay",
+        background_tasks,
+        "queue_parser_generation",
         lambda _: pytest.fail("parser was queued"),
     )
 
@@ -298,8 +298,8 @@ def test_classification_task_queues_parser_for_transaction_alert(
         lambda template_id: TemplateClassificationResult(template_id, True),
     )
     monkeypatch.setattr(
-        background_tasks.generate_field_parsers_task,
-        "delay",
+        background_tasks,
+        "queue_parser_generation",
         lambda template_id: SimpleNamespace(id=f"parser-{template_id}"),
     )
 
@@ -337,7 +337,7 @@ def test_parser_submission_retry_keeps_completed_classification(
         return Retry()
 
     monkeypatch.setattr(background_tasks, "classify_template", classify)
-    monkeypatch.setattr(background_tasks.generate_field_parsers_task, "delay", submit)
+    monkeypatch.setattr(background_tasks, "queue_parser_generation", submit)
     monkeypatch.setattr(background_tasks.classify_template_task, "retry", retry)
 
     with pytest.raises(Retry):

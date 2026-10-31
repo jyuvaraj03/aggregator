@@ -3,6 +3,7 @@ from __future__ import annotations
 # Peewee and its migration helper are dynamically typed.
 # pyright: reportAttributeAccessIssue=false, reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false
 from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -11,13 +12,20 @@ import pytest
 from fastapi.testclient import TestClient
 from playhouse.migrations import Runner
 
-from aggregator import field_parsers
+from aggregator import background_tasks, field_parsers, parser_review
 from aggregator.api import actions
 from aggregator.api import field_parsers as field_parser_routes
 from aggregator.api.app import app
 from aggregator.api.parameter_serialization import indexed_parameter_responses
 from aggregator.database import DATABASE_PATH, PROJECT_ROOT, close_database, database
-from aggregator.models import Account, Email, FieldParser, Template, Transaction
+from aggregator.models import (
+    Account,
+    Email,
+    FieldParser,
+    ParserGenerationSession,
+    Template,
+    Transaction,
+)
 from aggregator.parser_configuration import TRANSACTION_FIELD_NAMES, FieldParserSet
 
 
@@ -32,11 +40,18 @@ def queue_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         actions.extract_transactions_task, "delay", lambda: _QueuedJob("extraction-job")
     )
-    monkeypatch.setattr(
-        field_parser_routes.generate_field_parsers_task,
-        "delay",
-        lambda _: _QueuedJob("generation-job"),
-    )
+
+    def queue(template_id: int, feedback: str | None = None) -> _QueuedJob:
+        field_parsers.require_parser_generation_eligible(template_id)
+        return _QueuedJob("generation-job")
+
+    monkeypatch.setattr(field_parser_routes, "queue_parser_generation", queue)
+
+    @contextmanager
+    def unlocked(_: int) -> Generator[None]:
+        yield
+
+    monkeypatch.setattr(parser_review, "template_lock", unlocked)
 
 
 @pytest.fixture(autouse=True)
@@ -834,20 +849,69 @@ def test_generate_field_parsers_endpoint_rejects_ineligible_templates(
     classification: bool | None,
 ) -> None:
     template = Template.create(text="Paid <NUMBER>", is_transaction_alert=classification)
-    queued = False
-
-    def queue(_: int) -> _QueuedJob:
-        nonlocal queued
-        queued = True
-        return _QueuedJob()
-
-    monkeypatch.setattr(field_parser_routes.generate_field_parsers_task, "delay", queue)
-
     response = client.post(f"/templates/{template.id}/field-parsers/generate")
 
     assert response.status_code == 409
     assert response.json() == {"detail": "Template is not classified as a transaction alert"}
-    assert queued is False
+
+
+def test_generate_field_parsers_feedback_body_and_queue_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = Template.create(text="Paid <NUMBER>", is_transaction_alert=True)
+    _email(1, template=template)
+    received: list[str | None] = []
+
+    def queue(template_id: int, feedback: str | None = None) -> _QueuedJob:
+        assert template_id == template.id
+        received.append(feedback)
+        return _QueuedJob("feedback-job")
+
+    monkeypatch.setattr(field_parser_routes, "queue_parser_generation", queue)
+    url = f"/templates/{template.id}/field-parsers/generate"
+    for payload in (None, {}, {"feedback": None}, {"feedback": " \n "}):
+        response = client.post(url, json=payload) if payload is not None else client.post(url)
+        assert response.status_code == 202
+    response = client.post(url, json={"feedback": "  Correct the payee  "})
+    assert response.status_code == 202
+    assert received == [None, None, None, None, "Correct the payee"]
+    assert client.post(url, json={"feedback": 12}).status_code == 422
+    assert client.post(url, json={"feedback": "x" * 4001}).status_code == 422
+
+    def unavailable(_: int, feedback: str | None = None) -> _QueuedJob:
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(field_parser_routes, "queue_parser_generation", unavailable)
+    assert client.post(url).status_code == 503
+
+
+def test_generate_endpoint_reserves_durable_session_before_queueing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = Template.create(text="Paid <NUMBER>", is_transaction_alert=True)
+    email = _email(1, template=template)
+    email.body = "Paid 19"
+    email.save()
+    submitted: list[tuple[object, ...]] = []
+
+    def submit(*, args: tuple[object, ...], task_id: str) -> _QueuedJob:
+        submitted.append(args)
+        return _QueuedJob(task_id)
+
+    monkeypatch.setattr(
+        field_parser_routes, "queue_parser_generation", background_tasks.queue_parser_generation
+    )
+    monkeypatch.setattr(background_tasks.generate_field_parsers_task, "apply_async", submit)
+    response = client.post(f"/templates/{template.id}/field-parsers/generate")
+    assert response.status_code == 202
+    assert len(submitted) == 1
+    session = ParserGenerationSession.get_by_id(submitted[0][1])
+    assert session.active_job_id == response.json()["job_id"]
+    assert session.status == "queued"
+    snapshot = client.get(f"/templates/{template.id}/field-parsers").json()
+    assert snapshot["session_id"] == session.id
+    assert snapshot["session_round"] == 1
+    assert snapshot["session_status"] == "queued"
 
 
 def test_resolved_fields_are_consistent_for_index_and_detail(client: TestClient) -> None:

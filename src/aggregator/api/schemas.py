@@ -37,6 +37,9 @@ class TemplateFieldParsersResponse(BaseModel):
     parameters: list[IndexedParameterResponse]
     parsers: FieldParserSet
     preview: ResolvedTransactionFields | None
+    session_id: int | None = None
+    session_round: int | None = None
+    session_status: str | None = None
 
 
 class EmailRepresentationResponse(BaseModel):

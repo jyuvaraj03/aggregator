@@ -18,4 +18,9 @@ docs {
   ```json
   {"detail":"Template is not classified as a transaction alert"}
   ```
+
+  The 202 response contains a job URL. When the job succeeds, a validated parser
+  draft is saved and awaits review. GET Field Parsers includes session ID, round,
+  and status. Send feedback with the Correct Field Parsers request, or approve the
+  draft. A new generation without feedback supersedes the previous session.
 }
